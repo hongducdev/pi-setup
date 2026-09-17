@@ -10,7 +10,7 @@ This repository contains shareable configurations, extensions, and fonts. It **s
 
 | Component | Description |
 |---|---|
-| **`pi-footer`** | Statusline 3 hàng tùy biến tinh gọn: `context-bar` thích ứng theo model window, `cache-hit-rate`, cache TTL countdown, tốc độ phản hồi `tps`, git diff/branch, chi phí token, và gom gọn 13 external statuses. |
+| **`pi-footer`** | Statusline 3 hàng tùy biến tinh gọn: `context-bar` thích ứng theo model window, `cache-hit-rate`, cache TTL countdown, tốc độ phản hồi `tps`, git diff/branch, chi phí token, và gom gọn 12 external statuses. |
 | **`pi-footer-cache-tps`** | Extension đo lường thời gian sống prompt cache (Anthropic 5m/1h, OpenAI 24h/30m) & tốc độ token streaming (TPS). |
 | **`9router-pi`** | Dynamic 9router model discovery cho Pi Coding Agent từ [luongnv89/pi-extensions](https://github.com/luongnv89/pi-extensions). |
 | **`subagents-pi`** | Bảng metrics theo dõi fleet subagent (Context usage, output TPS, model, thinking level). |

@@ -10,17 +10,16 @@
     "write"
   ],
   "packages": [
-    "git:github.com/obra/superpowers",
     "npm:opencode-pi",
     "npm:pi-antigravity",
     "npm:pi-plugin-manager",
     "npm:pi-footer",
     "npm:timestamp-pi",
-    "npm:advisor-pi",
     "npm:cache-warm",
     "npm:@tmustier/pi-session-recap",
     "extensions/9router-pi",
-    "extensions/subagents-pi"
+    "extensions/subagents-pi",
+    "npm:@tintinweb/pi-subagents"
   ],
   "theme": "dark"
 }
