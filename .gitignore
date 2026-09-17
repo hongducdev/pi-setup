@@ -1,0 +1,35 @@
+# ==============================================================================
+# SECURITY: Never commit secrets, credentials, or private machine state
+# ==============================================================================
+auth.json
+auth.json.*
+*.key
+*.pem
+*.token
+*.secret
+
+# Sessions, memory and conversation transcripts
+sessions/
+memory/
+skills/
+
+# Package dependencies, git clones, and binary runtimes
+npm/
+git/
+bin/
+trust.json
+models-store.json
+
+# Live runtime files in root (portable tracked versions live in config/)
+/extensions/
+/settings.json
+/model-fallback/
+/advisor.json
+/models.json
+
+# OS / Editor / Cache / Temp
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
+scratch/

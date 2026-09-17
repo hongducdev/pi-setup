@@ -1,0 +1,12 @@
+# File/đường dẫn KHÔNG đưa vào repo public này.
+# Mỗi dòng 1 glob, tính từ gốc thư mục config/. Dấu # bắt đầu comment.
+# Được scripts/pi-setup-backup.ps1 tôn trọng khi mirror.
+
+# Extension do Orca sinh (@orca-managed-pi-extension)
+extensions/orca-*.ts
+
+# State và token theo máy
+auth.json
+models-store.json
+sessions/
+memory/

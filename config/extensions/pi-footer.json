@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "enabled": true,
+  "preset": "default",
+  "lines": [
+    [
+      {
+        "type": "cwd",
+        "options": {
+          "segments": 3
+        }
+      },
+      {
+        "type": "model-provider"
+      },
+      {
+        "type": "thinking-level"
+      }
+    ],
+    [
+      {
+        "type": "context-bar",
+        "options": {
+          "contextBarMode": "medium",
+          "contextConditionalColors": true,
+          "hideWhenZero": true
+        }
+      },
+      {
+        "type": "cache-hit-rate",
+        "options": {
+          "cacheHitSource": "session",
+          "hideWhenZero": true
+        }
+      },
+      {
+        "type": "event",
+        "options": {
+          "widgetId": "cache_ttl",
+          "icon": "󰆼 "
+        }
+      },
+      {
+        "type": "event",
+        "options": {
+          "widgetId": "tps",
+          "icon": " "
+        }
+      },
+      {
+        "type": "total-time"
+      }
+    ],
+    [
+      {
+        "type": "git-branch",
+        "options": {
+          "hideWhenEmpty": true
+        }
+      },
+      {
+        "type": "git-diff",
+        "options": {
+          "gitDiffMode": "compact"
+        }
+      },
+      {
+        "type": "cost"
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "mcp"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "mcp-auth"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "worktree"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "background-tasks"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "goal"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "subagent-slash"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "subagent-slash-text"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "advisor-scout"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "advisor-usage"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "session-recap"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "pi-lens-lsp"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "usage"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "stash"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "subagents-pi"
+        }
+      }
+    ]
+  ],
+  "separator": "dot",
+  "separatorFg": "default",
+  "separatorBg": "default",
+  "iconMode": "nerd",
+  "minimalist": false,
+  "terminal": {
+    "widthMode": "full"
+  },
+  "extensionStatusRow": {
+    "hiddenKeys": [
+      "advisor-scout",
+      "advisor-usage",
+      "background-tasks",
+      "goal",
+      "mcp",
+      "mcp-auth",
+      "pi-lens-lsp",
+      "session-recap",
+      "stash",
+      "subagent-slash",
+      "subagent-slash-text",
+      "subagents-pi",
+      "usage",
+      "worktree"
+    ],
+    "knownKeys": [
+      "advisor-scout",
+      "advisor-usage",
+      "background-tasks",
+      "goal",
+      "mcp",
+      "mcp-auth",
+      "pi-lens-lsp",
+      "session-recap",
+      "stash",
+      "subagent-slash",
+      "subagent-slash-text",
+      "subagents-pi",
+      "usage",
+      "worktree"
+    ]
+  }
+}
