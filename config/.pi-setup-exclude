@@ -10,3 +10,6 @@ auth.json
 models-store.json
 sessions/
 memory/
+advisor-outcomes.jsonl
+advisor-outcomes-salt
+

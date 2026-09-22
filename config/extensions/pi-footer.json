@@ -112,6 +112,18 @@
       {
         "type": "external-status",
         "options": {
+          "externalStatusKey": "advisor-scout"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "advisor-usage"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
           "externalStatusKey": "session-recap"
         }
       },
@@ -151,6 +163,8 @@
   },
   "extensionStatusRow": {
     "hiddenKeys": [
+      "advisor-scout",
+      "advisor-usage",
       "background-tasks",
       "goal",
       "mcp",
@@ -165,6 +179,8 @@
       "worktree"
     ],
     "knownKeys": [
+      "advisor-scout",
+      "advisor-usage",
       "background-tasks",
       "goal",
       "mcp",

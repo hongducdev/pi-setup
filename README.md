@@ -10,7 +10,8 @@ This repository contains shareable configurations, extensions, and fonts. It **s
 
 | Component | Description |
 |---|---|
-| **`pi-footer`** | Statusline 3 hàng tùy biến tinh gọn: `context-bar` thích ứng theo model window, `cache-hit-rate`, cache TTL countdown, tốc độ phản hồi `tps`, git diff/branch, chi phí token, và gom gọn 12 external statuses. |
+| **`pi-footer`** | Statusline 3 hàng tùy biến tinh gọn: `context-bar` thích ứng theo model window, `cache-hit-rate`, cache TTL countdown, tốc độ phản hồi `tps`, git diff/branch, chi phí token, và gom gọn 14 external statuses (bao gồm `advisor-scout` & `advisor-usage`). |
+| **`pi-advisor-flow`** | Executor / Advisor flow: ý kiến thứ hai từ model mạnh hơn, tích hợp trực tiếp 2 status widgets (`advisor-scout`, `advisor-usage`) vào pi-footer và có công cụ kiểm tra schema tự động. |
 | **`pi-footer-cache-tps`** | Extension đo lường thời gian sống prompt cache (Anthropic 5m/1h, OpenAI 24h/30m) & tốc độ token streaming (TPS). |
 | **`9router-pi`** | Dynamic 9router model discovery cho Pi Coding Agent từ [luongnv89/pi-extensions](https://github.com/luongnv89/pi-extensions). |
 | **`subagents-pi`** | Bảng metrics theo dõi fleet subagent (Context usage, output TPS, model, thinking level). |
@@ -24,19 +25,21 @@ This repository contains shareable configurations, extensions, and fonts. It **s
 ```text
 .
 ├── config/
-│   ├── settings.json              # Danh sách packages & thiết lập Pi portable
-│   ├── .pi-setup-exclude          # Quy tắc loại trừ các file/folder nhạy cảm
+│   ├── settings.json                # Danh sách packages & thiết lập Pi portable
+│   ├── advisor.json                 # Cấu hình pi-advisor-flow (model, scout, footer)
+│   ├── .pi-setup-exclude            # Quy tắc loại trừ các file/folder nhạy cảm
 │   └── extensions/
-│       ├── pi-footer.json         # Layout cấu hình 3 hàng của pi-footer
-│       ├── pi-footer-cache-tps.ts # Script đo lường Cache TTL & TPS
-│       ├── 9router-pi/            # Extension 9router
-│       └── subagents-pi/          # Extension subagents fleet metrics
+│       ├── pi-footer.json           # Layout cấu hình 3 hàng của pi-footer (14 statuses)
+│       ├── pi-footer-cache-tps.ts   # Script đo lường Cache TTL & TPS
+│       ├── 9router-pi/              # Extension 9router
+│       └── subagents-pi/            # Extension subagents fleet metrics
 ├── fonts/
-│   └── GeistMono/                 # 54 variants của GeistMono Nerd Font
+│   └── GeistMono/                   # 54 variants của GeistMono Nerd Font
 ├── scripts/
-│   ├── install-geist-font.ps1     # Script cài font tự động vào Windows
-│   ├── pi-setup-restore.ps1       # Khôi phục setup vào ~/.pi/agent
-│   └── pi-setup-backup.ps1        # Sao lưu thay đổi từ ~/.pi/agent vào repo
+│   ├── install-geist-font.ps1       # Script cài font tự động vào Windows
+│   ├── pi-setup-restore.ps1         # Khôi phục setup vào ~/.pi/agent
+│   ├── pi-setup-backup.ps1          # Sao lưu thay đổi từ ~/.pi/agent vào repo
+│   └── pi-setup-verify-advisor.mjs  # Kiểm tra tính hợp lệ của advisor.json theo schema
 └── README.md
 ```
 

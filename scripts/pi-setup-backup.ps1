@@ -31,7 +31,14 @@ if (Test-Path $srcSettings) {
     Write-Host "  -> settings.json"
 }
 
-# 2. Copy shareable extensions (ignoring machine-generated orca-*.ts)
+# 2. Copy advisor.json
+$srcAdvisor = Join-Path $SourceDir "advisor.json"
+if (Test-Path $srcAdvisor) {
+    Copy-Item -Path $srcAdvisor -Destination (Join-Path $configDir "advisor.json") -Force
+    Write-Host "  -> advisor.json"
+}
+
+# 3. Copy shareable extensions (ignoring machine-generated orca-*.ts)
 $srcExtDir = Join-Path $SourceDir "extensions"
 if (Test-Path $srcExtDir) {
     Get-ChildItem -Path $srcExtDir | Where-Object {
@@ -39,7 +46,10 @@ if (Test-Path $srcExtDir) {
     } | ForEach-Object {
         $dest = Join-Path $configExtDir $_.Name
         if ($_.PSIsContainer) {
-            Copy-Item -Path $_.FullName -Destination $dest -Recurse -Force
+            if (-not (Test-Path $dest)) {
+                New-Item -ItemType Directory -Path $dest -Force | Out-Null
+            }
+            Copy-Item -Path (Join-Path $_.FullName "*") -Destination $dest -Recurse -Force
         } else {
             Copy-Item -Path $_.FullName -Destination $dest -Force
         }
@@ -48,4 +58,4 @@ if (Test-Path $srcExtDir) {
 }
 
 Write-Host ""
-Write-Host "✓ Backup completed! Secret files (auth.json, sessions, etc.) were excluded." -ForegroundColor Green
+Write-Host "[OK] Backup completed! Secret files (auth.json, sessions, etc.) were excluded." -ForegroundColor Green

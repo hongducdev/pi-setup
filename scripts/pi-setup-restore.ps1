@@ -56,5 +56,5 @@ if ($InstallFont) {
 }
 
 Write-Host ""
-Write-Host "✓ Restore completed successfully!" -ForegroundColor Green
+Write-Host "[OK] Restore completed successfully!" -ForegroundColor Green
 Write-Host "Run 'pi list' or 'pi' to start your session." -ForegroundColor Yellow

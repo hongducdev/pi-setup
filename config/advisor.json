@@ -1,0 +1,13 @@
+{
+  "alwaysOn": true,
+  "advisorOutcomeLogging": false,
+  "advisorEffort": "low",
+  "advisorScoutEnabled": true,
+  "showUsageFooter": true,
+  "advisorRedactSecrets": true,
+  "advisorTrackedFileContent": true,
+  "advisorUntrackedContent": true,
+  "gateFailureMode": "warn-and-continue",
+  "advisor": "deepseek/deepseek-flash",
+  "executor": "deepseek/deepseek-v4-flash"
+}

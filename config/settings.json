@@ -1,8 +1,8 @@
 {
-  "lastChangelogVersion": "0.85.1",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.6-luna",
-  "defaultThinkingLevel": "medium",
+  "lastChangelogVersion": "0.87.0",
+  "defaultProvider": "antigravity",
+  "defaultModel": "gemini-3.8-flash",
+  "defaultThinkingLevel": "high",
   "defaultTools": [
     "read",
     "powershell",
@@ -17,9 +17,11 @@
     "npm:timestamp-pi",
     "npm:cache-warm",
     "npm:@tmustier/pi-session-recap",
-    "extensions/9router-pi",
-    "extensions/subagents-pi",
-    "npm:@tintinweb/pi-subagents"
+    "extensions\\9router-pi",
+    "extensions\\subagents-pi",
+    "npm:@tintinweb/pi-subagents",
+    "npm:pi-advisor-flow",
+    "npm:pi-mcp-adapter"
   ],
   "theme": "dark"
 }

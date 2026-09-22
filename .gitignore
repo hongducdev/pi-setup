@@ -25,7 +25,12 @@ models-store.json
 /settings.json
 /model-fallback/
 /advisor.json
+advisor-outcomes.jsonl
+advisor-outcomes-salt
 /models.json
+/mcp.json
+/mcp-*.json
+/antigravity-accounts.json
 
 # OS / Editor / Cache / Temp
 .vscode/
