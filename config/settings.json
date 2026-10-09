@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.87.0",
+  "lastChangelogVersion": "1.1.0",
   "defaultProvider": "antigravity",
   "defaultModel": "gemini-3.8-flash",
   "defaultThinkingLevel": "high",
@@ -10,18 +10,31 @@
     "write"
   ],
   "packages": [
-    "npm:opencode-pi",
     "npm:pi-antigravity",
-    "npm:pi-plugin-manager",
     "npm:pi-footer",
     "npm:timestamp-pi",
-    "npm:cache-warm",
     "npm:@tmustier/pi-session-recap",
-    "extensions\\9router-pi",
     "extensions\\subagents-pi",
     "npm:@tintinweb/pi-subagents",
     "npm:pi-advisor-flow",
-    "npm:pi-mcp-adapter"
+    "npm:pi-mcp-adapter",
+    "npm:pi-lens",
+    "npm:pi-model-fallback",
+    "extensions\\pi-goal-orch",
+    "npm:pi-skillful"
   ],
-  "theme": "dark"
+  "theme": "dark",
+  "extensions": [
+    "-builtin:mcp"
+  ],
+  "skillful": {
+    "toggleSlots": {
+      "1": "ck-cook",
+      "2": "ck-fix",
+      "3": "ck-debug",
+      "4": "ck-code-review",
+      "5": "ck-git",
+      "6": "ck-ask"
+    }
+  }
 }

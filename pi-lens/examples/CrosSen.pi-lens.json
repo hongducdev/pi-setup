@@ -1,0 +1,52 @@
+{
+  "$schema": "https://raw.githubusercontent.com/apmantza/pi-lens/master/docs/schema/pi-lens-config-v1.json",
+  "ignore": [
+    "test/**/*.cpp",
+    "test/**/*.h",
+    "test/**/*.hpp"
+  ],
+  "lsp": {
+    "disabledServers": [
+      "cpp"
+    ],
+    "servers": {
+      "clangd-esp": {
+        "name": "clangd (ESP32 toolchain via --query-driver)",
+        "extensions": [
+          ".c",
+          ".cc",
+          ".cpp",
+          ".cxx",
+          ".h",
+          ".hh",
+          ".hpp",
+          ".hxx",
+          ".ino"
+        ],
+        "command": "C:/Users/YOUR_USER/.pi-lens/tools/clangd/bin/clangd.exe",
+        "args": [
+          "--background-index",
+          "--header-insertion=never",
+          "--query-driver=C:/Users/YOUR_USER/.platformio/packages/toolchain-*/bin/*"
+        ],
+        "covers": [
+          "cpp-check"
+        ],
+        "rootMarkers": [
+          "compile_commands.json",
+          "platformio.ini"
+        ]
+      }
+    }
+  },
+  "rules": {
+    "cpp-check-host-gxx": {
+      "disable": [
+        "fatal error",
+        "error",
+        "warning",
+        "note"
+      ]
+    }
+  }
+}

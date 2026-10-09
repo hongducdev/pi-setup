@@ -1,15 +1,37 @@
 # File/đường dẫn KHÔNG đưa vào repo public này.
-# Mỗi dòng 1 glob, tính từ gốc thư mục config/. Dấu # bắt đầu comment.
-# Được scripts/pi-setup-backup.ps1 tôn trọng khi mirror.
+# Mỗi dòng 1 glob (wildcard kiểu PowerShell -like), tính từ gốc ~/.pi/agent, dùng "/".
+# Dấu # bắt đầu comment. Được scripts/pi-setup-backup.ps1 tôn trọng khi mirror.
 
 # Extension do Orca sinh (@orca-managed-pi-extension)
 extensions/orca-*.ts
 
 # State và token theo máy
 auth.json
+auth.json.*
+antigravity-accounts.json
+opencode-keys.json
+opencode-usage.jsonl
+mcp-oauth/*
+mcp-cache.json
 models-store.json
-sessions/
-memory/
+trust.json
+sessions/*
+memory/*
 advisor-outcomes.jsonl
 advisor-outcomes-salt
 
+# Dữ liệu runtime của extension tự viết (lịch sử / cache / học được theo máy)
+live-log-history.json
+live-log-last-stop.md
+env-context-cache.json
+env-context-learned.json
+
+# Rác build / backup
+*/node_modules/*
+*/dist/*
+*.bak
+*.bak-*
+*.bak.*
+backups/*
+*.log
+extensions/herdr-agent-state.ts

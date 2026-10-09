@@ -14,7 +14,17 @@
         "type": "model-provider"
       },
       {
+        "type": "event",
+        "options": {
+          "widgetId": "ag_account",
+          "icon": " "
+        }
+      },
+      {
         "type": "thinking-level"
+      },
+      {
+        "type": "active-tools"
       }
     ],
     [
@@ -23,14 +33,14 @@
         "options": {
           "contextBarMode": "medium",
           "contextConditionalColors": true,
-          "hideWhenZero": true
+          "hideWhenZero": false
         }
       },
       {
         "type": "cache-hit-rate",
         "options": {
           "cacheHitSource": "session",
-          "hideWhenZero": true
+          "hideWhenZero": false
         }
       },
       {
@@ -65,7 +75,10 @@
         }
       },
       {
-        "type": "cost"
+        "type": "cost",
+        "options": {
+          "showSubscription": true
+        }
       },
       {
         "type": "external-status",
@@ -82,49 +95,7 @@
       {
         "type": "external-status",
         "options": {
-          "externalStatusKey": "worktree"
-        }
-      },
-      {
-        "type": "external-status",
-        "options": {
-          "externalStatusKey": "background-tasks"
-        }
-      },
-      {
-        "type": "external-status",
-        "options": {
-          "externalStatusKey": "goal"
-        }
-      },
-      {
-        "type": "external-status",
-        "options": {
-          "externalStatusKey": "subagent-slash"
-        }
-      },
-      {
-        "type": "external-status",
-        "options": {
-          "externalStatusKey": "subagent-slash-text"
-        }
-      },
-      {
-        "type": "external-status",
-        "options": {
-          "externalStatusKey": "advisor-scout"
-        }
-      },
-      {
-        "type": "external-status",
-        "options": {
           "externalStatusKey": "advisor-usage"
-        }
-      },
-      {
-        "type": "external-status",
-        "options": {
-          "externalStatusKey": "session-recap"
         }
       },
       {
@@ -138,17 +109,49 @@
         "options": {
           "externalStatusKey": "usage"
         }
-      },
+      }
+    ],
+    [
       {
         "type": "external-status",
         "options": {
-          "externalStatusKey": "stash"
+          "externalStatusKey": "goal"
         }
       },
       {
         "type": "external-status",
         "options": {
-          "externalStatusKey": "subagents-pi"
+          "externalStatusKey": "background-tasks"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "worktree"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "model-fallback"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "advisor-scout"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "session-recap"
+        }
+      },
+      {
+        "type": "external-status",
+        "options": {
+          "externalStatusKey": "stash"
         }
       }
     ]
@@ -169,11 +172,10 @@
       "goal",
       "mcp",
       "mcp-auth",
+      "model-fallback",
       "pi-lens-lsp",
       "session-recap",
       "stash",
-      "subagent-slash",
-      "subagent-slash-text",
       "subagents-pi",
       "usage",
       "worktree"
@@ -185,11 +187,10 @@
       "goal",
       "mcp",
       "mcp-auth",
+      "model-fallback",
       "pi-lens-lsp",
       "session-recap",
       "stash",
-      "subagent-slash",
-      "subagent-slash-text",
       "subagents-pi",
       "usage",
       "worktree"

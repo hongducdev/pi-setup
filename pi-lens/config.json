@@ -1,0 +1,31 @@
+{
+  "$schema": "https://raw.githubusercontent.com/apmantza/pi-lens/master/docs/schema/pi-lens-config-v1.json",
+  "ignore": [
+    "**/.pio/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/target/**",
+    "**/.dart_tool/**",
+    "**/.astro/**",
+    "**/.cache/**",
+    "**/*.generated.*",
+    "**/*.min.js"
+  ],
+  "lsp": {
+    "disabledServers": [
+      "typos",
+      "marksman",
+      "python",
+      "python-jedi",
+      "yaml",
+      "json",
+      "css",
+      "html",
+      "bash",
+      "cmake",
+      "kotlin",
+      "zizmor"
+    ]
+  }
+}

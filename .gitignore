@@ -31,6 +31,26 @@ advisor-outcomes-salt
 /mcp.json
 /mcp-*.json
 /antigravity-accounts.json
+/AGENTS.md
+/live-log.json
+/env-context.json
+/opencode-keys.json
+/opencode-usage.jsonl
+/mcp-cache.json
+/mcp-oauth/
+/prompt-suggest/
+/backups/
+/extensions/herdr-agent-state.ts
+
+# Runtime data of custom extensions (history / cache / learned, per machine)
+live-log-history.json
+live-log-last-stop.md
+env-context-cache.json
+env-context-learned.json
+*.bak
+*.bak-*
+*.bak.*
+node_modules/
 
 # OS / Editor / Cache / Temp
 .vscode/

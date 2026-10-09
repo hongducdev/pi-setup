@@ -9,5 +9,5 @@
   "advisorUntrackedContent": true,
   "gateFailureMode": "warn-and-continue",
   "advisor": "deepseek/deepseek-flash",
-  "executor": "deepseek/deepseek-v4-flash"
+  "executor": "opencode-go/deepseek-v4.1-flash"
 }

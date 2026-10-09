@@ -1,0 +1,16 @@
+{
+  "name": "pi-goal-orch",
+  "version": "0.1.0",
+  "description": "Pi /goal command that discovers installed skills and runs them as stages to complete a user goal",
+  "keywords": ["pi-package"],
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions/index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "license": "MIT"
+}

@@ -30,10 +30,8 @@ export function renderFleetLines(
 
 	const lines: string[] = [truncateToWidth(formatHeader(theme, running, queued, other, safeWidth), safeWidth)];
 
-	if (rows.length === 0) {
-		lines.push(truncateToWidth(theme.fg("dim", "  No active subagents"), safeWidth));
-		return lines;
-	}
+	// Hidden while idle (patched 2026-10-08): the panel only appears when subagents exist.
+	if (rows.length === 0) return [];
 
 	for (const row of rows) {
 		lines.push(...formatAgentLines(theme, row, safeWidth));

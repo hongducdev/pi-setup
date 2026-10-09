@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "lines": 8,
+  "widget": false,
+  "watchdog": true,
+  "stallMin": null,
+  "maxMin": null,
+  "warnSec": 60,
+  "lang": "auto"
+}

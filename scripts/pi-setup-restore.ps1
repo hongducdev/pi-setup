@@ -3,6 +3,7 @@
 
 param(
     [string]$TargetDir = $(if ($env:PI_CODING_AGENT_DIR) { $env:PI_CODING_AGENT_DIR } else { Join-Path $env:USERPROFILE ".pi\agent" }),
+    [string]$PiLensDir = (Join-Path $env:USERPROFILE ".pi-lens"),
     [switch]$InstallFont,
     [switch]$Force
 )
@@ -46,7 +47,28 @@ Get-ChildItem -Path $configDir -Exclude ".pi-setup-exclude" | ForEach-Object {
     Write-Host "  -> $($_.Name)"
 }
 
-# 3. Install font if requested
+# 3. pi-lens global config (pi-lens/config.json -> ~/.pi-lens/config.json)
+$lensSrc = Join-Path $rootDir "pi-lens\config.json"
+if (Test-Path $lensSrc) {
+    if (-not (Test-Path $PiLensDir)) { New-Item -ItemType Directory -Force -Path $PiLensDir | Out-Null }
+    $lensDest = Join-Path $PiLensDir "config.json"
+    if ((Test-Path $lensDest) -and -not $Force) {
+        Write-Host "  (skip) ~/.pi-lens/config.json already exists (use -Force to overwrite; a .bak copy is kept)" -ForegroundColor Yellow
+    } else {
+        if (Test-Path $lensDest) { Copy-Item $lensDest "$lensDest.bak.$(Get-Date -Format 'yyyyMMdd-HHmmss')" -Force }
+        Copy-Item -Path $lensSrc -Destination $lensDest -Force
+        Write-Host "  -> ~/.pi-lens/config.json"
+    }
+}
+
+# 4. Patch extension packages for host-provided dependency compliance
+$patchScript = Join-Path $scriptDir "patch-extension-deps.ps1"
+if (Test-Path $patchScript) {
+    Write-Host "Checking extension dependencies compliance..." -ForegroundColor Cyan
+    & $patchScript -TargetDir $TargetDir
+}
+
+# 5. Install font if requested
 if ($InstallFont) {
     $fontScript = Join-Path $scriptDir "install-geist-font.ps1"
     if (Test-Path $fontScript) {
