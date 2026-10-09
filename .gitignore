@@ -58,3 +58,7 @@ node_modules/
 Thumbs.db
 *.log
 scratch/
+
+# pi-goal-orch runtime (registry of running goals, merge locks)
+goal-orch-registry.json*
+goal-orch-locks/

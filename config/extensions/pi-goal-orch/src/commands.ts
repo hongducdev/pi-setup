@@ -18,14 +18,22 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { discoverSkills, formatSkillsList } from "./discover.ts";
 import { buildPlanKickoffMessage } from "./planner.ts";
-import { cancelGoal, kickoffStage, retryCurrent, skipCurrent } from "./runner.ts";
+import { cancelGoal, finishGoal, kickoffStage, retryCurrent, skipCurrent } from "./runner.ts";
+import { loadConfig } from "./config.ts";
+import { rememberCtx } from "./finish.ts";
+import { setupIsolation } from "./git.ts";
+import { listGoals } from "./registry.ts";
 import { formatStatus, getState, persistState, setState } from "./state.ts";
-import { effectivePauseReason, emptyGoalState, type GoalMode, type GoalState } from "./types.ts";
+import { effectivePauseReason, emptyGoalState, type GitMode, type GoalMode, type GoalState } from "./types.ts";
 
 const HELP = [
   "/goal <mô tả>            — lập kế hoạch + chạy AFK (tự chuyển stage)",
   "/goal --hitl <mô tả>     — chạy HITL (dừng sau mỗi stage)",
-  "/goal status             — trạng thái (⏸ = stage checkpoint)",
+  "/goal --worktree|--branch|--no-git <mô tả> — cách cô lập git (mặc định: worktree, đổi trong goal-orch.json)",
+  "/goal status             — trạng thái + branch/worktree/base (⏸ = stage checkpoint)",
+  "/goal merge              — review (nếu cần) rồi merge --no-ff vào base, dọn worktree/branch",
+  "/goal abandon            — dừng goal, GIỮ branch/worktree (in đường dẫn)",
+  "/goal goals              — các goal đang chạy song song (registry)",
   "/goal next               — tiếp tục sau khi dừng",
   "/goal auto               — chuyển goal hiện tại sang AFK (đang dừng thì chạy tiếp ngay)",
   "/goal hitl               — chuyển goal hiện tại sang HITL",
@@ -34,6 +42,20 @@ const HELP = [
 
 function isActive(state: GoalState): boolean {
   return state.status === "running" || state.status === "planning" || state.status === "paused";
+}
+
+/** Strip --worktree / --branch / --no-git flags. */
+function parseGitFlags(raw: string): { git?: GitMode; text: string } {
+  let git: GitMode | undefined;
+  const text = raw
+    .replace(/(^|\s)--(worktree|branch|no-git)(?=\s|$)/gi, (_m, pre: string, flag: string) => {
+      const f = flag.toLowerCase();
+      git = f === "no-git" ? "none" : (f as GitMode);
+      return pre;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+  return { git, text };
 }
 
 /** Strip --hitl / --afk / --auto flags; return the requested mode (if any) and the remaining text. */
@@ -66,6 +88,7 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
     description:
       "Orchestrate installed skills as stages toward a goal (<desc>|--hitl <desc>|status|next|auto|hitl|skip|retry|cancel|skills|help)",
     handler: async (args, ctx) => {
+      rememberCtx(ctx);
       const raw = (args ?? "").trim();
       const [head] = raw.split(/\s+/);
       const sub = (head ?? "").toLowerCase();
@@ -90,6 +113,11 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
         const state = getState();
         if (state.status !== "paused" && state.status !== "running") {
           notify(ctx, "Nothing to advance. Start a goal first.", "warning");
+          return;
+        }
+        const r = effectivePauseReason(state);
+        if (state.git && (state.currentIndex >= state.stages.length || (r && ["review", "test", "merge-ask", "merge", "merge-wait"].includes(r)))) {
+          finishGoal(pi, state, { manual: true });
           return;
         }
         if (state.currentIndex >= state.stages.length) {
@@ -186,16 +214,51 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
         return;
       }
 
-      if (sub === "cancel") {
+      if (sub === "merge" && !rest) {
+        const state = getState();
+        if (!state.git) {
+          notify(ctx, "This goal has no git isolation (started with --no-git, outside a repo, or by an older version) — nothing to merge.", "warning");
+          return;
+        }
+        if (state.git.merged) {
+          notify(ctx, `Already merged (${state.git.mergeSha?.slice(0, 7)}).`, "info");
+          return;
+        }
+        if (state.status === "planning") {
+          notify(ctx, "Still planning — wait for the plan first.", "warning");
+          return;
+        }
+        notify(ctx, `Review + merge \`${state.git.branch}\` → \`${state.git.base}\`…`, "info");
+        finishGoal(pi, { ...state, git: { ...state.git, abandoned: false } }, { manual: true });
+        return;
+      }
+
+      if ((sub === "abandon" || sub === "cancel") && !rest) {
+        const state = getState();
         cancelGoal(pi);
-        notify(ctx, "Goal cancelled.", "warning");
+        const g = getState().git;
+        const keep = g && !g.merged ? `\nKept branch \`${g.branch}\`${g.mode === "worktree" ? ` and worktree ${g.workdir}` : ""} — nothing deleted. Later: \`/goal merge\` (if this session still holds the goal) or merge/remove it by hand.` : "";
+        notify(ctx, `Goal ${sub === "abandon" ? "abandoned" : "cancelled"} (${state.status} → cancelled).${keep}`, "warning");
+        return;
+      }
+
+      if (sub === "goals" && !rest) {
+        const all = listGoals().filter((g) => g.status === "active" || g.status === "merging");
+        notify(
+          ctx,
+          all.length
+            ? `Active goals (${all.length}):\n${all.map((g) => `  ${g.status === "merging" ? "⇄" : "→"} ${g.branch} — ${g.goal.slice(0, 50)}\n     ${g.workdir}${g.files.length ? ` (${g.files.length} files)` : ""}`).join("\n")}`
+            : "No active goals in the registry.",
+          "info",
+        );
         return;
       }
 
       // --- start new goal: /goal [--hitl] <description>  (also /goal hitl|auto <description>) ---
-      let requested = parseModeFlags(raw);
+      const gitFlags = parseGitFlags(raw);
+      let requested = parseModeFlags(gitFlags.text);
       if ((sub === "hitl" || sub === "auto" || sub === "afk") && rest) {
-        const inner = parseModeFlags(rest);
+        const inner = parseModeFlags(parseGitFlags(rest).text);
         requested = { mode: inner.mode ?? (sub === "hitl" ? "HITL" : "AFK"), text: inner.text };
       }
       const goalText = requested.text;
@@ -228,12 +291,19 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
       }
 
       const mode: GoalMode = requested.mode ?? "AFK";
+      const cfg = loadConfig();
+      const iso = setupIsolation(ctx.cwd || process.cwd(), goalText, gitFlags.git ?? cfg.git, cfg);
+      if (iso.error) {
+        notify(ctx, `Goal not started: ${iso.error}`, "error");
+        return;
+      }
       const planning: GoalState = {
         ...emptyGoalState(),
         status: "planning",
         goal: goalText,
         mode,
         modeSource: requested.mode ? "user" : "default",
+        ...(iso.git ? { git: iso.git } : {}),
       };
       setState(planning);
       persistState(pi, planning);
@@ -241,7 +311,7 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
       pi.sendUserMessage(buildPlanKickoffMessage(pi, goalText, mode));
       notify(
         ctx,
-        `Planning goal (${mode}) with ${skills.length} skill(s). Model should call submit_goal_plan…`,
+        `Planning goal (${mode}) with ${skills.length} skill(s). Model should call submit_goal_plan…\n${iso.notes.join("\n")}`,
         "info",
       );
     },

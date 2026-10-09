@@ -13,6 +13,7 @@ import {
   type GoalStage,
 } from "./types.ts";
 import { startRunner } from "./runner.ts";
+import { shapeStagesForGit } from "./finish.ts";
 
 const SubmitGoalPlanParams = Type.Object({
   stages: Type.Array(
@@ -46,6 +47,7 @@ export function buildPlanKickoffMessage(
 ): string {
   const skills = discoverSkills(pi);
   const list = formatSkillsList(skills);
+  const state = getState();
 
   return [
     "You are planning a multi-stage goal for the pi-goal-orch extension.",
@@ -70,6 +72,14 @@ export function buildPlanKickoffMessage(
     `   - \`checkpoint: true\` pauses the goal after that stage so the user can approve its output (a stage whose instruction asks to wait for the user's approval is treated as a checkpoint automatically). Use it ONLY where approval is genuinely needed (typically: approve the plan before code changes) — at most ${MAX_CHECKPOINTS} stages, usually 0 or 1.`,
     "4. Do not start executing stages yourself — submit_goal_plan will start the runner.",
     "5. Stages run back-to-back; do not ask the user to confirm between stages unless the stage is a checkpoint.",
+    ...(state?.git
+      ? [
+          "",
+          "## Git isolation",
+          `This goal runs on branch \`${state.git.branch}\` in ${state.git.workdir} (base \`${state.git.base}\`). Implementation stages commit there.`,
+          "A final code-review stage is appended automatically if your plan does not end with one; after a PASS the extension merges into the base branch itself — do NOT plan push/merge/PR stages.",
+        ]
+      : []),
   ].join("\n");
 }
 
@@ -98,7 +108,7 @@ export function registerPlannerTool(pi: ExtensionAPI): void {
 
       let checkpoints = 0;
       let droppedCheckpoints = 0;
-      const stages: GoalStage[] = (params.stages ?? []).map(
+      let stages: GoalStage[] = (params.stages ?? []).map(
         (s: { skill: string; instruction?: string; checkpoint?: boolean }) => {
           const stage: GoalStage = {
             skill: String(s.skill).replace(/^\//, ""),
@@ -126,6 +136,8 @@ export function registerPlannerTool(pi: ExtensionAPI): void {
           details: { ok: false, reason: "empty_stages" },
         };
       }
+
+      if (state.git) stages = shapeStagesForGit(pi, stages);
 
       // The user decides the mode. HITL only if the user explicitly asked
       // (/goal --hitl <desc> or /goal hitl while planning); planner's `mode` is ignored.

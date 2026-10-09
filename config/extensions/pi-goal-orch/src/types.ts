@@ -6,7 +6,62 @@ export type GoalMode = "AFK" | "HITL";
 export type GoalModeSource = "default" | "user";
 
 /** Why the runner paused. Absent in state written by older versions. */
-export type PauseReason = "hitl" | "checkpoint" | "anti-signal";
+export type PauseReason =
+  | "hitl"
+  | "checkpoint"
+  | "anti-signal"
+  /** review FAIL after max fix loops, or no verdict reported */
+  | "review"
+  /** last test stage failed — merge blocked */
+  | "test"
+  /** merge: ask — waiting for /goal merge */
+  | "merge-ask"
+  /** merge refused / conflict / base not checked out */
+  | "merge"
+  /** another goal holds the merge lock; retried automatically */
+  | "merge-wait";
+
+/** Role of a stage in the git finish phase. Absent = ordinary stage. */
+export type StageRole = "review" | "fix" | "test";
+
+export type GitMode = "worktree" | "branch" | "none";
+
+export interface GoalReport {
+  verdict: "PASS" | "FAIL";
+  blocking?: number;
+  summary?: string;
+  /** stage index that reported */
+  index: number;
+  /** HEAD of the goal branch when reported */
+  sha?: string;
+}
+
+/** Git isolation info. Absent in state written by older versions = no git management. */
+export interface GoalGit {
+  mode: "worktree" | "branch";
+  /** main working tree (top level) */
+  repo: string;
+  /** directory the agent must work in (worktree path, or repo in branch mode) */
+  workdir: string;
+  branch: string;
+  base: string;
+  /** base commit when the goal started / last synced */
+  baseSha: string;
+  /** Orca worktree id (<repoId>::<path>) when created through Orca */
+  orcaId?: string;
+  orcaRepoId?: string;
+  /** registry key */
+  id: string;
+  fixLoops: number;
+  lastReview?: GoalReport;
+  lastTest?: GoalReport;
+  merged?: boolean;
+  mergeSha?: string;
+  cleanedUp?: boolean;
+  abandoned?: boolean;
+  /** branch mode: branch the user was on before (to restore after merge) */
+  previousBranch?: string;
+}
 
 export type GoalStatus =
   | "idle"
@@ -26,6 +81,10 @@ export interface GoalStage {
    * output (e.g. approve a plan before code changes). Absent = false.
    */
   checkpoint?: boolean;
+  /** git finish-phase role (review / fix / test) */
+  role?: StageRole;
+  /** appended automatically by the extension (not by the planner) */
+  auto?: boolean;
   status?: "pending" | "running" | "done" | "skipped" | "failed";
 }
 
@@ -44,6 +103,8 @@ export interface GoalState {
   pauseReason?: PauseReason;
   /** Last assistant text snippet used for anti-signal checks */
   lastAssistantText?: string;
+  /** git isolation (absent = old state / --no-git) */
+  git?: GoalGit;
 }
 
 export const ENTRY_TYPE = "goal-orch-state" as const;
@@ -76,6 +137,7 @@ export function instructionRequestsApproval(instruction?: string): boolean {
   );
 }
 
+const PAUSE_REASONS: PauseReason[] = ["hitl", "checkpoint", "anti-signal", "review", "test", "merge-ask", "merge", "merge-wait"];
 const STATUSES: GoalStatus[] = ["idle", "planning", "running", "paused", "completed", "cancelled"];
 const STAGE_STATUSES = ["pending", "running", "done", "skipped", "failed"] as const;
 
@@ -98,6 +160,8 @@ export function normalizeGoalState(raw: unknown): GoalState {
           else if (s.checkpoint === undefined && instructionRequestsApproval(st.instruction)) {
             st.checkpoint = true;
           }
+          if (s.role === "review" || s.role === "fix" || s.role === "test") st.role = s.role;
+          if (s.auto === true) st.auto = true;
           if (STAGE_STATUSES.includes(s.status as (typeof STAGE_STATUSES)[number])) {
             st.status = s.status as GoalStage["status"];
           }
@@ -116,8 +180,10 @@ export function normalizeGoalState(raw: unknown): GoalState {
     updatedAt: typeof d.updatedAt === "string" ? d.updatedAt : base.updatedAt,
   };
   if (d.modeSource === "user" || d.modeSource === "default") out.modeSource = d.modeSource;
-  if (d.pauseReason === "hitl" || d.pauseReason === "checkpoint" || d.pauseReason === "anti-signal") {
-    out.pauseReason = d.pauseReason;
+  if (PAUSE_REASONS.includes(d.pauseReason as PauseReason)) out.pauseReason = d.pauseReason as PauseReason;
+  const g = d.git as Record<string, unknown> | undefined;
+  if (g && typeof g === "object" && (g.mode === "worktree" || g.mode === "branch") && typeof g.branch === "string" && typeof g.repo === "string") {
+    out.git = { ...(g as unknown as GoalGit), fixLoops: Number.isInteger(g.fixLoops) ? (g.fixLoops as number) : 0 };
   }
   if (typeof d.lastAssistantText === "string") out.lastAssistantText = d.lastAssistantText;
   return out;

@@ -73,7 +73,13 @@ const PAUSE_TEXT: Record<string, string> = {
   hitl: "HITL — stage finished",
   checkpoint: "checkpoint — review the previous stage's output",
   "anti-signal": "the model asked a question / needs input",
+  review: "code review FAIL / no verdict",
+  test: "last test stage failed — merge blocked",
+  "merge-ask": "review PASS, waiting for `/goal merge` (merge: ask)",
+  merge: "merge refused or conflict (nothing was changed)",
+  "merge-wait": "merge queue — another goal is merging into this repo",
 };
+const GIT_REASONS = new Set(["review", "test", "merge-ask", "merge", "merge-wait"]);
 
 export function formatStatus(state: GoalState = current): string {
   if (state.status === "idle" || !state.goal) {
@@ -87,7 +93,21 @@ export function formatStatus(state: GoalState = current): string {
   ];
   const reason = effectivePauseReason(state);
   if (reason) {
-    lines.push(`Paused because: ${PAUSE_TEXT[reason]} — \`/goal next\` to continue, \`/goal auto\` to continue in AFK`);
+    lines.push(
+      GIT_REASONS.has(reason)
+        ? `Paused because: ${PAUSE_TEXT[reason]} — \`/goal merge\` to retry review/merge, \`/goal abandon\` to stop and keep the branch`
+        : `Paused because: ${PAUSE_TEXT[reason]} — \`/goal next\` to continue, \`/goal auto\` to continue in AFK`,
+    );
+  }
+  const g = state.git;
+  if (g) {
+    const where = g.mode === "worktree" ? `worktree ${g.workdir}${g.orcaId ? " (Orca)" : ""}` : `branch mode in ${g.workdir}`;
+    lines.push(`Git: ${where}`);
+    lines.push(`  branch \`${g.branch}\` ← base \`${g.base}\` (${(g.baseSha || "").slice(0, 7)}), main repo ${g.repo}`);
+    const rev = g.lastReview ? `${g.lastReview.verdict}${g.lastReview.blocking ? ` (${g.lastReview.blocking} blocking)` : ""}` : "—";
+    const test = g.lastTest ? g.lastTest.verdict : "—";
+    const fate = g.merged ? `merged ${g.mergeSha?.slice(0, 7) ?? ""}${g.cleanedUp ? ", cleaned up" : ""}` : g.abandoned ? "abandoned (branch/worktree kept)" : "not merged";
+    lines.push(`  review: ${rev} · tests: ${test} · fix loops: ${g.fixLoops} · ${fate}`);
   }
   if (state.stages.length) {
     lines.push("Stages (⏸ = checkpoint: pauses for approval after it finishes):");
@@ -102,7 +122,7 @@ export function formatStatus(state: GoalState = current): string {
               : s.status === "failed"
                 ? "✗"
                 : "·";
-      const cp = s.checkpoint ? " ⏸" : "";
+      const cp = (s.checkpoint ? " ⏸" : "") + (s.role ? ` [${s.role}${s.auto ? ", auto" : ""}]` : "");
       const cur = i === state.currentIndex ? " (current)" : "";
       const instr = s.instruction ? ` — ${s.instruction}` : "";
       lines.push(`  ${mark} [${i + 1}] ${s.skill}${cp}${instr}${cur}`);

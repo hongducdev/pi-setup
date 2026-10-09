@@ -9,6 +9,7 @@ import { registerGoalCommand } from "../src/commands.ts";
 import { registerPlannerTool } from "../src/planner.ts";
 import { registerRunnerEvents } from "../src/runner.ts";
 import { restoreFromBranch } from "../src/state.ts";
+import { registerReportTool } from "../src/finish.ts";
 
 export default function (pi: ExtensionAPI) {
   // Restore branch-local state when a session starts or the tree changes
@@ -20,6 +21,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   registerPlannerTool(pi);
+  registerReportTool(pi);
   registerRunnerEvents(pi);
   registerGoalCommand(pi);
 }

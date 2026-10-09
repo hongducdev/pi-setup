@@ -22,7 +22,7 @@ Repo chỉ chứa cấu hình, extension và font dùng chung được. **Không
 | `npm:pi-mcp-adapter` | MCP adapter (MCP builtin của Pi bị tắt bằng `"extensions": ["-builtin:mcp"]`). |
 | `npm:pi-lens` | Chẩn đoán code real-time (LSP, linter, formatter, type-check). Cấu hình ở `pi-lens/`. |
 | `npm:pi-model-fallback` | Tự chuyển sang model dự phòng khi provider lỗi (429, 5xx). |
-| `extensions\pi-goal-orch` | Lệnh `/goal`: chạy chuỗi skill theo stage để hoàn thành một mục tiêu. |
+| `extensions\pi-goal-orch` | Lệnh `/goal`: chạy chuỗi skill theo stage; mỗi goal một worktree/branch (qua Orca nếu đang chạy), tự review rồi merge. |
 | `npm:pi-skillful` | Cải thiện gọi/hiển thị skill; phím tắt toggle slot 1–6 = `ck-cook`, `ck-fix`, `ck-debug`, `ck-code-review`, `ck-git`, `ck-ask`. |
 
 Extension file đơn trong `config/extensions/*.ts` và thư mục có `index.ts` được Pi tự load (không cần khai báo trong `packages`).
@@ -51,7 +51,16 @@ Extension file đơn trong `config/extensions/*.ts` và thư mục có `index.ts
 - **Chế độ do người dùng quyết định**: mặc định **AFK** (tự chuyển stage). `/goal --hitl <mô tả>` để dừng sau mỗi stage. `mode` model gửi lên bị bỏ qua.
 - **Checkpoint** (`⏸`): stage cần duyệt (ví dụ duyệt plan trước khi sửa code, hoặc instruction có “Chờ tôi duyệt”) — AFK chỉ dừng sau các stage này.
 - Chỉ dừng khi tin nhắn cuối của stage thật sự hỏi người dùng; trả lời xong goal tự chạy tiếp.
-- Lệnh: `/goal status` · `/goal next` · `/goal auto` (sang AFK, đang dừng thì chạy tiếp) · `/goal hitl` · `/goal skip` · `/goal retry` · `/goal cancel` · `/goal skills` · `/goal help`. Chi tiết: [`config/extensions/pi-goal-orch/README.md`](config/extensions/pi-goal-orch/README.md).
+- **Git isolation**: trong git repo, mỗi goal chạy trên branch `goal/<slug>-<ngày>` trong **worktree riêng** (mặc định; tạo qua `orca worktree create` nếu Orca đang chạy để hiện trong Orca UI, không thì `git worktree add`). Không đụng file chưa commit của bạn ở main tree. `/goal --branch …` (cần tree sạch) hoặc `/goal --no-git …`.
+- **Kết thúc tự động**: stage `ck-code-review` → FAIL thì `ck-fix` + review lại (tối đa 2 vòng) → PASS thì `merge --no-ff` vào base (không push), xoá worktree + `branch -d`. Test stage FAIL thì không merge. Chạy **nhiều goal song song**: registry + merge lock, base đi tiếp thì merge base vào goal rồi review/test lại, cảnh báo sớm khi 2 goal sửa cùng file, conflict thì abort và dừng.
+- Lệnh: `/goal status` · `/goal next` · `/goal auto` (sang AFK, đang dừng thì chạy tiếp) · `/goal hitl` · `/goal merge` · `/goal abandon` (giữ branch/worktree) · `/goal goals` · `/goal skip` · `/goal retry` · `/goal cancel` · `/goal skills` · `/goal help`. Cấu hình `~/.pi/agent/goal-orch.json` (`git`, `merge: auto|ask`, `keepBranch`, `orca`, `orcaSetup: inherit|run|skip`, `orcaAutoAddRepo`, …). Chi tiết: [`config/extensions/pi-goal-orch/README.md`](config/extensions/pi-goal-orch/README.md).
+
+### `model-router.ts` — model theo loại việc
+- Việc **lập kế hoạch / review** (skill có tên chứa `plan`, `review`, `scout`, `brainstorm`, `ask`, `research`, `audit`, `explore`, `spec`, `design`… như `ck-plan`, `ck-code-review`, `ck-scout`) → `opencode-go/deepseek-v4.1-flash`.
+- Việc **code** (`cook`, `fix`, `implement`, `code`, `build`, `refactor`, `debug`, `test`… như `ck-cook`, `ck-fix`, `ck-test`) → `antigravity/gemini-3.8-flash`.
+- Bắt được: `/skill:<tên>`, `/<tên-skill>`, slot Alt+N (chèn `/skill:`), stage của `/goal` (“Use the skill …”), và khi model tự đọc `…/<skill>/SKILL.md`. Subagent `@tintinweb/pi-subagents`: `Agent` không chỉ định `model` thì `Plan`/`Explore` → plan, `general-purpose` → code (agent tuỳ chỉnh giữ model trong frontmatter).
+- Hết lượt (agent settled) thì **trả lại model trước đó**; nếu bạn tự đổi model giữa chừng (hoặc `pi-model-fallback` đổi khi lỗi) thì không ghi đè. Model đích không có / chưa đăng nhập / `setModel` thất bại → giữ model hiện tại và báo.
+- `/router` (trạng thái) · `/router on` · `/router off` · `/router reload`. Cấu hình `~/.pi/agent/model-router.json`: `{ "enabled", "models": { "plan", "code" }, "rules", "skills": { "<tên>": "plan|code|none" }, "subagents", "restore" }`. OpenCode Go là provider có sẵn của Pi (đăng nhập bằng `/login`, key nằm trong `auth.json` — không lưu trong repo).
 
 ### `pi-prompt-suggest/` — gợi ý prompt tiếp theo dạng ghost text
 - Sau mỗi lượt, gợi ý câu lệnh tiếp theo hiện mờ trong editor; `→` để nhận (hoặc Space khi editor trống). Mặc định **tắt**.
@@ -103,7 +112,8 @@ Hướng dẫn global của Pi (`~/.pi/agent/AGENTS.md`): luôn trả lời ti�
 │       ├── antigravity-account-footer.ts
 │       ├── pi-footer-cache-tps.ts
 │       ├── pi-footer.json           # Layout pi-footer
-│       ├── pi-goal-orch/            # /goal
+│       ├── pi-goal-orch/            # /goal (+ worktree/Orca/review/merge)
+│       ├── model-router.ts          # /router — plan/review vs code model
 │       ├── pi-prompt-suggest/       # Ghost-text prompt suggestions
 │       ├── subagents-pi/            # Fleet metrics (đã vá render.ts)
 │       └── 9router-pi/              # (không bật)

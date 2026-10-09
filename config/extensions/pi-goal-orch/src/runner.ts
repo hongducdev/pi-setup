@@ -16,6 +16,8 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { discoverSkills } from "./discover.ts";
 import { formatStatus, getState, persistState, setState } from "./state.ts";
 import type { GoalStage, GoalState, PauseReason } from "./types.ts";
+import { checkOverlap, gitPromptBlock, handleRoleOutcome, pauseGit, rememberCtx, runFinish } from "./finish.ts";
+import { patchGoal } from "./registry.ts";
 
 /**
  * Explicit requests for user input. Only checked against the TAIL of the
@@ -89,7 +91,36 @@ function markStage(state: GoalState, index: number, status: GoalStage["status"])
   return { ...state, stages };
 }
 
-function finishGoal(pi: ExtensionAPI, state: GoalState): void {
+function completeGoal(pi: ExtensionAPI, state: GoalState, note = ""): void {
+  const next: GoalState = { ...state, status: "completed", pauseReason: undefined };
+  setState(next);
+  persistState(pi, next);
+  try {
+    pi.sendUserMessage(`[pi-goal-orch] Goal completed.${note ? ` ${note}` : ""}\n${formatStatus(next)}`, {
+      deliverAs: "followUp",
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** All stages done: git goals go through review/merge; others complete. */
+export function finishGoal(pi: ExtensionAPI, state: GoalState, opts: { manual?: boolean } = {}): void {
+  if (state.git && !state.git.merged && !state.git.abandoned) {
+    runFinish(pi, { ...state, currentIndex: state.stages.length }, {
+      kickoff: (s) => {
+        setState(s);
+        persistState(pi, s);
+        kickoffStage(pi, s);
+      },
+      complete: (s, note) => completeGoal(pi, s, note),
+    }, opts);
+    return;
+  }
+  legacyFinish(pi, state);
+}
+
+function legacyFinish(pi: ExtensionAPI, state: GoalState): void {
   const next: GoalState = { ...state, status: "completed", pauseReason: undefined };
   setState(next);
   persistState(pi, next);
@@ -173,6 +204,7 @@ export function kickoffStage(pi: ExtensionAPI, state?: GoalState): void {
     instr.trim(),
     "",
     ending,
+    gitPromptBlock(s, stage),
   ]
     .filter((line) => line !== undefined)
     .join("\n");
@@ -180,6 +212,7 @@ export function kickoffStage(pi: ExtensionAPI, state?: GoalState): void {
   lastAssistantBuffer = "";
   lastFinalText = "";
   lastAdvanceKey = "";
+  if (s.git) checkOverlap(next);
   pi.sendUserMessage(message);
 }
 
@@ -192,6 +225,7 @@ export function maybeAdvance(
   source: "agent_settled" | "agent_end",
 ): void {
   if (advancing) return;
+  rememberCtx(ctx);
   let state = getState();
   if (state.status === "paused" && state.pauseReason === "anti-signal" && lastFinalText) {
     // The user answered the model's question and the stage continued: evaluate it again.
@@ -213,6 +247,17 @@ export function maybeAdvance(
     if (typeof pending === "function" ? pending() : pending) return;
   } catch {
     /* ignore */
+  }
+
+  // Git finish-phase roles (review verdict → fix loop / pause; test verdict).
+  if (state.git && state.stages[state.currentIndex]?.role) {
+    const outcome = handleRoleOutcome(pi, state, finalText);
+    state = outcome.state;
+    if (outcome.pause) {
+      lastFinalText = "";
+      pauseGit(pi, state, outcome.pause.reason, outcome.pause.message, { bumpIndex: true });
+      return;
+    }
   }
 
   const stage = state.stages[state.currentIndex];
@@ -319,7 +364,13 @@ export function retryCurrent(pi: ExtensionAPI): void {
 
 export function cancelGoal(pi: ExtensionAPI): void {
   const state = getState();
-  const next: GoalState = { ...state, status: "cancelled", pauseReason: undefined };
+  const next: GoalState = {
+    ...state,
+    status: "cancelled",
+    pauseReason: undefined,
+    git: state.git && !state.git.merged ? { ...state.git, abandoned: true } : state.git,
+  };
+  if (next.git?.abandoned) patchGoal(next.git.id, { status: "abandoned" });
   setState(next);
   persistState(pi, next);
 }

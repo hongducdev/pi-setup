@@ -35,3 +35,5 @@ env-context-learned.json
 backups/*
 *.log
 extensions/herdr-agent-state.ts
+goal-orch-registry.json
+goal-orch-locks/*
