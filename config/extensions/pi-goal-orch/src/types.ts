@@ -105,6 +105,12 @@ export interface GoalState {
   lastAssistantText?: string;
   /** git isolation (absent = old state / --no-git) */
   git?: GoalGit;
+  /** folder the goal works in (git: = git.workdir; no-git: the session cwd) */
+  workdir?: string;
+  /** stable id for this run: stage results go to <workdir>/.pi-goal/<runId>/stage-N.md */
+  runId?: string;
+  /** registry id for goals without git isolation */
+  regId?: string;
 }
 
 export const ENTRY_TYPE = "goal-orch-state" as const;
@@ -186,6 +192,7 @@ export function normalizeGoalState(raw: unknown): GoalState {
     out.git = { ...(g as unknown as GoalGit), fixLoops: Number.isInteger(g.fixLoops) ? (g.fixLoops as number) : 0 };
   }
   if (typeof d.lastAssistantText === "string") out.lastAssistantText = d.lastAssistantText;
+  for (const k of ["workdir", "runId", "regId"] as const) if (typeof d[k] === "string") out[k] = d[k] as string;
   return out;
 }
 

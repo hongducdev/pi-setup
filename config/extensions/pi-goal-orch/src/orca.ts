@@ -119,3 +119,16 @@ export function removeOrcaWorktree(id: string): { ok: boolean; error?: string } 
   const r = run(["worktree", "rm", "--worktree", `id:${id}`], 60_000);
   return { ok: r.ok, error: r.error };
 }
+
+/**
+ * Open a terminal in an Orca worktree running `command` (e.g. `pi`).
+ * Orca 1.4.209: `orca terminal create --worktree <sel> --title --command [--focus] --json`
+ * → { result: { terminal: { handle, ... } } }. Agent TUIs get Orca's renderer-backed terminal.
+ */
+export function createOrcaTerminal(worktreeId: string, title: string, command: string, focus: boolean): { handle?: string; error?: string } {
+  const args = ["terminal", "create", "--worktree", `id:${worktreeId}`, "--title", title.slice(0, 60), "--command", command];
+  if (focus) args.push("--focus");
+  const r = run(args, 60_000);
+  if (!r.ok) return { error: r.error };
+  return { handle: r.result?.terminal?.handle ?? r.result?.terminal?.id ?? "?" };
+}

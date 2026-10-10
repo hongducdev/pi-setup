@@ -22,11 +22,15 @@ import { cancelGoal, finishGoal, kickoffStage, retryCurrent, skipCurrent } from 
 import { loadConfig } from "./config.ts";
 import { rememberCtx } from "./finish.ts";
 import { setupIsolation } from "./git.ts";
-import { listGoals } from "./registry.ts";
+import { listGoals, normPath, upsertGoal } from "./registry.ts";
+import { folderBusy, formatGoalList, newGoal } from "./launch.ts";
+import { newRunId } from "./results.ts";
 import { formatStatus, getState, persistState, setState } from "./state.ts";
 import { effectivePauseReason, emptyGoalState, type GitMode, type GoalMode, type GoalState } from "./types.ts";
 
 const HELP = [
+  "/goal new [--hitl] <mô tả> — tạo worktree riêng (Orca Multi-task) + mở Pi MỚI trong đó chạy goal (session này vẫn rảnh)",
+  "/goal list               — mọi goal trong registry (mọi worktree/session)",
   "/goal <mô tả>            — lập kế hoạch + chạy AFK (tự chuyển stage)",
   "/goal --hitl <mô tả>     — chạy HITL (dừng sau mỗi stage)",
   "/goal --worktree|--branch|--no-git <mô tả> — cách cô lập git (mặc định: worktree, đổi trong goal-orch.json)",
@@ -242,6 +246,22 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
         return;
       }
 
+      if (sub === "list" && !rest) {
+        notify(ctx, formatGoalList(), "info");
+        return;
+      }
+
+      if (sub === "new") {
+        const flags = parseModeFlags(parseGitFlags(rest).text);
+        if (!flags.text) {
+          notify(ctx, "Usage: /goal new [--hitl] <goal>", "warning");
+          return;
+        }
+        const r = newGoal(ctx.cwd || process.cwd(), flags.text, flags.mode ?? "AFK", !!flags.mode);
+        notify(ctx, r.message, r.ok ? "info" : "error");
+        return;
+      }
+
       if (sub === "goals" && !rest) {
         const all = listGoals().filter((g) => g.status === "active" || g.status === "merging");
         notify(
@@ -292,7 +312,17 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
 
       const mode: GoalMode = requested.mode ?? "AFK";
       const cfg = loadConfig();
-      const iso = setupIsolation(ctx.cwd || process.cwd(), goalText, gitFlags.git ?? cfg.git, cfg);
+      const cwd = ctx.cwd || process.cwd();
+      const gitMode = gitFlags.git ?? cfg.git;
+      // 4a: never two goals in one folder (branch / no-git modes work in cwd itself)
+      if (gitMode !== "worktree") {
+        const busy = folderBusy(cwd);
+        if (busy) {
+          notify(ctx, `Goal not started. ${busy}`, "error");
+          return;
+        }
+      }
+      const iso = setupIsolation(cwd, goalText, gitMode, cfg);
       if (iso.error) {
         notify(ctx, `Goal not started: ${iso.error}`, "error");
         return;
@@ -304,7 +334,14 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
         mode,
         modeSource: requested.mode ? "user" : "default",
         ...(iso.git ? { git: iso.git } : {}),
+        workdir: iso.git?.workdir ?? cwd,
+        runId: newRunId(goalText),
       };
+      if (!iso.git) {
+        // register no-git goals too, so a second goal in this folder is refused
+        planning.regId = `${normPath(cwd)}#nogit-${planning.runId}`;
+        upsertGoal({ id: planning.regId, repo: cwd, branch: "", workdir: cwd, base: "", goal: goalText, status: "active", files: [] });
+      }
       setState(planning);
       persistState(pi, planning);
 

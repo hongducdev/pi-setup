@@ -8,6 +8,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { orchHome } from "./config.ts";
+import type { GoalGit, GoalMode } from "./types.ts";
 
 export interface RegistryEntry {
   id: string;
@@ -16,10 +17,16 @@ export interface RegistryEntry {
   workdir: string;
   base: string;
   goal: string;
-  status: "active" | "merging" | "merged" | "abandoned";
+  /** pending = created by `/goal new`, waiting for the Pi launched in its worktree to claim it */
+  status: "pending" | "active" | "merging" | "merged" | "abandoned" | "done";
   files: string[];
   pid: number;
   updatedAt: string;
+  /** pending goals: what the launched session needs to start the goal */
+  mode?: GoalMode;
+  git?: GoalGit;
+  /** how the session was launched (orca terminal / window / manual) */
+  launcher?: string;
 }
 
 interface RegistryFile {
@@ -29,6 +36,15 @@ interface RegistryFile {
 export function normPath(p: string): string {
   const s = path.resolve(p).replace(/\\/g, "/").replace(/\/+$/, "");
   return process.platform === "win32" ? s.toLowerCase() : s;
+}
+
+/** normPath of the real path (expands Windows 8.3 short names like HONGDU~1) — for folder comparisons only. */
+export function realKey(p: string): string {
+  try {
+    return normPath(fs.realpathSync.native(p));
+  } catch {
+    return normPath(p);
+  }
 }
 
 function registryPath(): string {
@@ -92,7 +108,7 @@ export function upsertGoal(e: Omit<RegistryEntry, "updatedAt" | "pid"> & { pid?:
     // drop finished entries older than 7 days
     const cutoff = Date.now() - 7 * 864e5;
     for (const [k, v] of Object.entries(r.goals)) {
-      if ((v.status === "merged" || v.status === "abandoned") && Date.parse(v.updatedAt) < cutoff) delete r.goals[k];
+      if ((v.status === "merged" || v.status === "abandoned" || v.status === "done") && Date.parse(v.updatedAt) < cutoff) delete r.goals[k];
     }
     write(r);
   });
@@ -112,7 +128,7 @@ export function claimedNames(repo: string): { branches: Set<string>; workdirs: S
   const branches = new Set<string>();
   const workdirs = new Set<string>();
   for (const g of listGoals()) {
-    if (normPath(g.repo) !== normPath(repo) || g.status === "merged" || g.status === "abandoned") continue;
+    if (normPath(g.repo) !== normPath(repo) || g.status === "merged" || g.status === "abandoned" || g.status === "done") continue;
     branches.add(g.branch);
     workdirs.add(normPath(g.workdir));
   }
@@ -139,7 +155,35 @@ function lockFile(repo: string): string {
   return path.join(orchHome(), "goal-orch-locks", `${h}.lock`);
 }
 
-function pidAlive(pid: number): boolean {
+/** Pending entries older than this are ignored (the launched Pi never claimed them). */
+const PENDING_TTL_MS = 30 * 60_000;
+
+/** An entry still owned by a live session (or a fresh pending launch). */
+export function isLive(g: RegistryEntry): boolean {
+  if (g.status === "pending") return Date.now() - Date.parse(g.updatedAt) < PENDING_TTL_MS;
+  return (g.status === "active" || g.status === "merging") && pidAlive(g.pid);
+}
+
+/** Live goals whose working folder is `dir` (other than `exceptId`). */
+export function goalsInFolder(dir: string, exceptId?: string): RegistryEntry[] {
+  const want = realKey(dir);
+  return listGoals().filter((g) => g.id !== exceptId && isLive(g) && realKey(g.workdir) === want);
+}
+
+/** Atomically take the pending goal registered for `dir` (set by `/goal new`). */
+export function claimPending(dir: string): RegistryEntry | null {
+  const want = realKey(dir);
+  return withRegistryLock(() => {
+    const r = read();
+    const hit = Object.values(r.goals).find((g) => g.status === "pending" && isLive(g) && realKey(g.workdir) === want);
+    if (!hit) return null;
+    r.goals[hit.id] = { ...hit, status: "active", pid: process.pid, updatedAt: new Date().toISOString() };
+    write(r);
+    return r.goals[hit.id];
+  });
+}
+
+export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;

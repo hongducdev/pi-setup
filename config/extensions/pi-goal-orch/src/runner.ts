@@ -18,6 +18,7 @@ import { formatStatus, getState, persistState, setState } from "./state.ts";
 import type { GoalStage, GoalState, PauseReason } from "./types.ts";
 import { checkOverlap, gitPromptBlock, handleRoleOutcome, pauseGit, rememberCtx, runFinish } from "./finish.ts";
 import { patchGoal } from "./registry.ts";
+import { previousResultsBlock, stageFile, writeStageResult } from "./results.ts";
 
 /**
  * Explicit requests for user input. Only checked against the TAIL of the
@@ -95,6 +96,7 @@ function completeGoal(pi: ExtensionAPI, state: GoalState, note = ""): void {
   const next: GoalState = { ...state, status: "completed", pauseReason: undefined };
   setState(next);
   persistState(pi, next);
+  if (!next.git && next.regId) patchGoal(next.regId, { status: "done" });
   try {
     pi.sendUserMessage(`[pi-goal-orch] Goal completed.${note ? ` ${note}` : ""}\n${formatStatus(next)}`, {
       deliverAs: "followUp",
@@ -124,6 +126,7 @@ function legacyFinish(pi: ExtensionAPI, state: GoalState): void {
   const next: GoalState = { ...state, status: "completed", pauseReason: undefined };
   setState(next);
   persistState(pi, next);
+  if (!next.git && next.regId) patchGoal(next.regId, { status: "done" });
   try {
     pi.sendUserMessage(`[pi-goal-orch] Goal completed.\n${formatStatus(next)}`, {
       deliverAs: "followUp",
@@ -205,6 +208,8 @@ export function kickoffStage(pi: ExtensionAPI, state?: GoalState): void {
     "",
     ending,
     gitPromptBlock(s, stage),
+    previousResultsBlock(s),
+    stageFile(s, s.currentIndex) ? `\n(pi-goal-orch saves this stage's final message to ${stageFile(s, s.currentIndex)} — end the stage with a self-contained summary of what you found/did, file paths and decisions, so later stages can rely on it.)` : "",
   ]
     .filter((line) => line !== undefined)
     .join("\n");
@@ -248,6 +253,9 @@ export function maybeAdvance(
   } catch {
     /* ignore */
   }
+
+  // Persist the stage's output before any pause / advance (survives restarts, feeds later stages).
+  writeStageResult(state, state.currentIndex, finalText.length > 400 ? finalText : (lastAssistantBuffer || finalText));
 
   // Git finish-phase roles (review verdict → fix loop / pause; test verdict).
   if (state.git && state.stages[state.currentIndex]?.role) {
@@ -371,6 +379,7 @@ export function cancelGoal(pi: ExtensionAPI): void {
     git: state.git && !state.git.merged ? { ...state.git, abandoned: true } : state.git,
   };
   if (next.git?.abandoned) patchGoal(next.git.id, { status: "abandoned" });
+  if (!next.git && next.regId) patchGoal(next.regId, { status: "abandoned" });
   setState(next);
   persistState(pi, next);
 }

@@ -18,7 +18,8 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { basename, delimiter, dirname, join, resolve } from "node:path";
 
@@ -225,6 +226,57 @@ export function similar(a: string, b: string): boolean {
 }
 
 // ---------- extension ----------
+// ---------- one `pio run` per project folder (several agents/goals building the same tree corrupt .pio/) ----------
+const PIO_RE = /\b(?:pio|platformio)(?:\.exe)?\s+run\b/i;
+const LOCK_DIR = join(DIR, "env-context-locks");
+const LOCK_MAX_MS = 3 * 3600_000;
+type PioLock = { pid: number; id: string; dir: string; cmd: string; at: number };
+function pidAlive(pid: number): boolean { try { process.kill(pid, 0); return true; } catch (e: any) { return e?.code === "EPERM"; } }
+/** cd targets in a command (cd / Set-Location / pushd / -d / --project-dir), /mnt/x/... mapped to X:/... */
+export function pioProjectDir(command: string, cwd: string): string {
+	let dir = cwd;
+	const re = /(?:^|[;&|(]\s*|&&\s*|bash\s+-l?c\s+["']?)(?:cd|Set-Location|sl|pushd)\s+(?:\/d\s+)?("[^"]+"|'[^']+'|[^\s;&|)"']+)|(?:-d|--project-dir)\s+("[^"]+"|'[^']+'|\S+)/gi;
+	for (const m of command.matchAll(re)) {
+		let p = (m[1] ?? m[2] ?? "").replace(/^["']|["']$/g, "");
+		if (!p || p.startsWith("$") || p.startsWith("~")) continue;
+		const w = p.match(/^\/mnt\/([a-z])\/(.*)$/i);
+		if (w) p = `${w[1].toUpperCase()}:/${w[2]}`;
+		dir = resolve(dir, p);
+	}
+	for (let d = dir, i = 0; i < 8; i++) { // walk up to the folder holding platformio.ini
+		if (existsSync(join(d, "platformio.ini"))) return d;
+		const up = dirname(d); if (up === d) break; d = up;
+	}
+	return dir;
+}
+const lockKey = (dir: string) => createHash("sha1").update(resolve(dir).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()).digest("hex").slice(0, 16);
+const myPioRuns = new Set<string>(); // shared by every instance in this process (parent + subagent sessions)
+(globalThis as any).__envctxPioRuns ??= myPioRuns;
+const livePio: Set<string> = (globalThis as any).__envctxPioRuns;
+/** null = acquired; otherwise the holder */
+export function acquirePio(dir: string, id: string, cmd: string): PioLock | null {
+	mkdirSync(LOCK_DIR, { recursive: true });
+	const f = join(LOCK_DIR, `pio-${lockKey(dir)}.json`);
+	const mine: PioLock = { pid: process.pid, id, dir, cmd: cmd.slice(0, 160), at: Date.now() };
+	for (let i = 0; i < 2; i++) {
+		try { writeFileSync(f, JSON.stringify(mine), { flag: "wx" }); livePio.add(id); return null; } catch (e: any) { if (e?.code !== "EEXIST") return null; }
+		let h: PioLock | undefined; try { h = JSON.parse(readFileSync(f, "utf8")); } catch { /* unreadable = stale */ }
+		const stale = !h || !pidAlive(h.pid) || Date.now() - h.at > LOCK_MAX_MS || (h.pid === process.pid && !livePio.has(h.id));
+		if (!stale) return h!;
+		try { rmSync(f, { force: true }); } catch { /* */ }
+	}
+	return null;
+}
+export function releasePio(id: string): void {
+	if (!livePio.delete(id)) return;
+	try {
+		for (const n of readdirSync(LOCK_DIR)) {
+			const f = join(LOCK_DIR, n);
+			try { if (JSON.parse(readFileSync(f, "utf8")).id === id) rmSync(f, { force: true }); } catch { /* */ }
+		}
+	} catch { /* */ }
+}
+
 export default function envContext(pi: ExtensionAPI) {
 	const settings = { guard: true, ...readJson<any>(SETTINGS, {}) };
 	let probe: Probe | undefined = readJson<Probe | undefined>(CACHE, undefined);
@@ -245,11 +297,24 @@ export default function envContext(pi: ExtensionAPI) {
 		try { return { systemPrompt: `${event.systemPrompt ?? ""}\n\n${block(ctx?.cwd ?? process.cwd())}` }; } catch { return; }
 	});
 
+	const ownPio = new Set<string>(); // this session's pio locks
+	pi.on("agent_end", () => { for (const id of ownPio) releasePio(id); ownPio.clear(); });
 	pi.on("tool_call", (event: any, ctx: any) => {
 		try {
-			if (!settings.guard || (event.toolName !== "powershell" && event.toolName !== "bash")) return;
-			const reason = checkCommand(event.toolName, String(event.input?.command ?? ""), ctx?.cwd ?? process.cwd(), probe, projOf);
+			if (event.toolName !== "powershell" && event.toolName !== "bash") return;
+			const command = String(event.input?.command ?? ""), cwd = ctx?.cwd ?? process.cwd();
+			let reason: string | undefined;
+			try { reason = settings.guard ? checkCommand(event.toolName, command, cwd, probe, projOf) : undefined; } catch { /* guard is best-effort */ }
 			if (reason) return { block: true, reason: `env-context: ${reason}` };
+			if (settings.pioLock !== false && PIO_RE.test(command)) {
+				const dir = pioProjectDir(command, cwd), id = String(event.toolCallId ?? `${process.pid}-${Date.now()}`);
+				const h = acquirePio(dir, id, command);
+				if (!h) ownPio.add(id);
+				if (h) {
+					const mins = Math.round((Date.now() - h.at) / 60000);
+					return { block: true, reason: `env-context: another \`pio run\` is already building ${h.dir} (pid ${h.pid}, started ${mins} min ago: \`${h.cmd}\`). Two builds in one project folder corrupt .pio/ — wait for it to finish (check again in a few minutes) or build in your own worktree. Do not kill it unless it belongs to you. (/envctx pio off disables this lock.)` };
+				}
+			}
 		} catch { /* never break tool calls */ }
 		return;
 	});
@@ -259,6 +324,7 @@ export default function envContext(pi: ExtensionAPI) {
 	let pending: { tool: string; cmd: string; err: string; at: number; left: number } | undefined;
 	pi.on("tool_execution_start", (e: any) => { try { if (typeof e?.args?.command === "string") cmds.set(e.toolCallId, { tool: e.toolName, cmd: e.args.command }); } catch { /* */ } });
 	pi.on("tool_execution_end", (e: any) => {
+		try { releasePio(String(e?.toolCallId)); ownPio.delete(String(e?.toolCallId)); } catch { /* */ }
 		try {
 			const c = cmds.get(e?.toolCallId); cmds.delete(e?.toolCallId);
 			if (!c || (c.tool !== "powershell" && c.tool !== "bash")) return;
@@ -276,7 +342,7 @@ export default function envContext(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("envctx", {
-		description: "Environment context: /envctx [refresh|learned|forget <n>|all|guard on|off]",
+		description: "Environment context: /envctx [refresh|learned|forget <n>|all|guard on|off|pio on|off]",
 		handler: async (args: string, ctx: any) => {
 			const say = (m: string) => { try { ctx?.ui?.notify?.(m, "info"); } catch { /* */ } };
 			try {
@@ -287,8 +353,9 @@ export default function envContext(pi: ExtensionAPI) {
 					const before = learned.length, idx = Number(m[1]) - 1; learned = m[1] === "all" ? [] : learned.filter((_, i) => i !== idx);
 					writeJson(LEARNED, learned); return say(`env-context: forgot ${before - learned.length}`);
 				}
+				if ((m = a.match(/^pio\s+(on|off)$/i))) { (settings as any).pioLock = m[1].toLowerCase() === "on"; writeJson(SETTINGS, settings); return say(`env-context: pio lock ${m[1].toLowerCase()}`); }
 				if ((m = a.match(/^guard\s+(on|off)$/i))) { settings.guard = m[1].toLowerCase() === "on"; writeJson(SETTINGS, settings); return say(`env-context: guard ${m[1].toLowerCase()}`); }
-				say(`${block(ctx?.cwd ?? process.cwd())}\n\n(probed ${probe ? new Date(probe.at).toLocaleString("sv-SE") : "not yet"}; guard ${settings.guard ? "on" : "off"}; ${learned.length} learned)\nUsage: /envctx [refresh|learned|forget <n>|all|guard on|off]`);
+				say(`${block(ctx?.cwd ?? process.cwd())}\n\n(probed ${probe ? new Date(probe.at).toLocaleString("sv-SE") : "not yet"}; guard ${settings.guard ? "on" : "off"}; ${learned.length} learned)\nUsage: /envctx [refresh|learned|forget <n>|all|guard on|off|pio on|off]`);
 			} catch { /* ignore */ }
 		},
 	});

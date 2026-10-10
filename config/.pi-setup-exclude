@@ -37,3 +37,4 @@ backups/*
 extensions/herdr-agent-state.ts
 goal-orch-registry.json
 goal-orch-locks/*
+env-context-locks/*

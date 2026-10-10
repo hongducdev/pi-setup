@@ -44,8 +44,9 @@ Extension file đơn trong `config/extensions/*.ts` và thư mục có `index.ts
 - Thêm vào system prompt một khối ngắn, ổn định (thân thiện prompt cache): shell thật đang dùng (Windows PowerShell 5.1), Git Bash vs WSL, tool nằm ở Windows hay WSL, recipe theo project (PlatformIO, npm/pnpm/bun theo lockfile, Cargo, CMake, Flutter, Tauri, Go, Python, .NET).
 - Chặn lệnh sai rõ ràng kèm lý do sửa (bash-ism trong PowerShell, `&&` trên PS 5.1, `pio run` trên Windows ở project build bằng WSL, sai package manager...). Không tự sửa lệnh; thêm `# envctx:allow` để bỏ qua.
 - Tự học: lệnh lỗi rồi lệnh tương tự thành công → lưu cách sửa (đã redact, chỉ trên máy).
-- Lệnh: `/envctx` · `/envctx refresh` · `learned` · `forget <n>|all` · `guard on|off`.
-- Cache/learned (`env-context-cache.json`, `env-context-learned.json`) là dữ liệu theo máy, không đưa vào repo.
+- Chỉ một `pio run` mỗi project tại một thời điểm (khoá theo thư mục có `platformio.ini`, dùng chung giữa các session/subagent/goal); lệnh thứ hai bị chặn kèm lý do. `/envctx pio off` để tắt.
+- Lệnh: `/envctx` · `/envctx refresh` · `learned` · `forget <n>|all` · `guard on|off` · `pio on|off`.
+- Cache/learned/khoá (`env-context-cache.json`, `env-context-learned.json`, `env-context-locks/`) là dữ liệu theo máy, không đưa vào repo.
 
 ### `pi-goal-orch/` — `/goal` chạy skill theo stage
 - `/goal <mô tả>`: model lập kế hoạch bằng tool `submit_goal_plan` từ các skill đã cài, runner soft-prompt từng skill.
@@ -54,7 +55,8 @@ Extension file đơn trong `config/extensions/*.ts` và thư mục có `index.ts
 - Chỉ dừng khi tin nhắn cuối của stage thật sự hỏi người dùng; trả lời xong goal tự chạy tiếp.
 - **Git isolation**: trong git repo, mỗi goal chạy trên branch `goal/<slug>-<ngày>` trong **worktree riêng** (mặc định; tạo qua `orca worktree create` nếu Orca đang chạy để hiện trong Orca UI, không thì `git worktree add`). Không đụng file chưa commit của bạn ở main tree. `/goal --branch …` (cần tree sạch) hoặc `/goal --no-git …`.
 - **Kết thúc tự động**: stage `ck-code-review` → FAIL thì `ck-fix` + review lại (tối đa 2 vòng) → PASS thì `merge --no-ff` vào base (không push), xoá worktree + `branch -d`. Test stage FAIL thì không merge. Chạy **nhiều goal song song**: registry + merge lock, base đi tiếp thì merge base vào goal rồi review/test lại, cảnh báo sớm khi 2 goal sửa cùng file, conflict thì abort và dừng.
-- Lệnh: `/goal status` · `/goal next` · `/goal auto` (sang AFK, đang dừng thì chạy tiếp) · `/goal hitl` · `/goal merge` · `/goal abandon` (giữ branch/worktree) · `/goal goals` · `/goal skip` · `/goal retry` · `/goal cancel` · `/goal skills` · `/goal help`. Cấu hình `~/.pi/agent/goal-orch.json` (`git`, `merge: auto|ask`, `keepBranch`, `orca`, `orcaSetup: inherit|run|skip`, `orcaAutoAddRepo`, …). Chi tiết: [`config/extensions/pi-goal-orch/README.md`](config/extensions/pi-goal-orch/README.md).
+- **`/goal new <mô tả>`** (kiểu Orca Multi-task): tạo worktree riêng rồi mở **Pi mới** trong đó (tab terminal Orca, hoặc cửa sổ console) — Pi mới tự nhận và chạy goal, session hiện tại vẫn rảnh. `/goal list`: mọi goal ở mọi worktree. Không cho 2 goal chạy cùng một thư mục (no-git/branch), lưu kết quả từng stage vào `<worktree>/.pi-goal/<run>/stage-N.md` (git bỏ qua) và đưa vào prompt stage sau, cảnh báo khi lệnh `cd` ra ngoài worktree của goal.
+- Lệnh: `/goal new` · `/goal list` · `/goal status` · `/goal next` · `/goal auto` (sang AFK, đang dừng thì chạy tiếp) · `/goal hitl` · `/goal merge` · `/goal abandon` (giữ branch/worktree) · `/goal goals` · `/goal skip` · `/goal retry` · `/goal cancel` · `/goal skills` · `/goal help`. Cấu hình `~/.pi/agent/goal-orch.json` (`git`, `merge: auto|ask`, `keepBranch`, `orca`, `orcaSetup: inherit|run|skip`, `orcaAutoAddRepo`, …). Chi tiết: [`config/extensions/pi-goal-orch/README.md`](config/extensions/pi-goal-orch/README.md).
 
 ### `model-router.ts` — tự chọn model theo loại việc
 - Phân loại việc thành 4 tier: **plan** (lập plan / review / đọc / tìm hiểu), **code** (sửa / viết code), **hard** (debug khó, refactor lớn, kiến trúc, race condition…), **quick** (việc vặt: rename, typo…). Dựa vào tên skill, loại subagent, tool được phép và từ khoá trong prompt (EN + VI).

@@ -62,3 +62,4 @@ scratch/
 # pi-goal-orch runtime (registry of running goals, merge locks)
 goal-orch-registry.json*
 goal-orch-locks/
+env-context-locks/

@@ -60,3 +60,4 @@
 - When I ask to delete or clean, delete only what I named (e.g. "chỉ xóa các file ảnh hưởng tới việc push lên GitHub", "chỉ giữ lại sách và font"). List what will be removed first.
 - Read-only tasks (reviews, audits, research) must not modify the working tree, run builds that write artifacts, or run writing git commands.
 - Never write secrets, tokens or keys into code, commits, or chat.
+- Parallel agents: never move, copy (robocopy/xcopy/cp -r), rename or re-clone a repo folder, and never change `core.autocrlf` / `.gitattributes` / line endings, while other agents or goals may be working in it — it rewrites every file under them (CRLF churn, lost work). Ask first. Run parallel tasks in their own git worktree (`/goal new`), not in the same folder.

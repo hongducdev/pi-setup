@@ -25,6 +25,12 @@ export interface GoalOrchConfig {
   maxFixLoops: number;
   /** minutes after which a merge lock is considered stale */
   lockStaleMinutes: number;
+  /** `/goal new`: how to start the goal's own Pi: auto = Orca terminal if the worktree is Orca's, else a new console window (Windows) */
+  newLauncher: "auto" | "orca" | "window" | "none";
+  /** command started in the new worktree */
+  piCommand: string;
+  /** `/goal new` with Orca: switch the Orca UI to the new terminal */
+  orcaFocus: boolean;
 }
 
 export const DEFAULT_CONFIG: GoalOrchConfig = {
@@ -38,6 +44,9 @@ export const DEFAULT_CONFIG: GoalOrchConfig = {
   fixSkill: "ck-fix",
   maxFixLoops: 2,
   lockStaleMinutes: 30,
+  newLauncher: "auto",
+  piCommand: "pi",
+  orcaFocus: false,
 };
 
 export function orchHome(): string {
@@ -54,6 +63,9 @@ export function loadConfig(): GoalOrchConfig {
     if (typeof raw.worktreeRoot === "string" && raw.worktreeRoot) cfg.worktreeRoot = raw.worktreeRoot;
     if (raw.orca === "auto" || raw.orca === "off") cfg.orca = raw.orca;
     if (["inherit", "run", "skip"].includes(raw.orcaSetup)) cfg.orcaSetup = raw.orcaSetup;
+    if (["auto", "orca", "window", "none"].includes(raw.newLauncher)) cfg.newLauncher = raw.newLauncher;
+    if (typeof raw.piCommand === "string" && raw.piCommand.trim()) cfg.piCommand = raw.piCommand.trim();
+    if (typeof raw.orcaFocus === "boolean") cfg.orcaFocus = raw.orcaFocus;
     if (typeof raw.orcaAutoAddRepo === "boolean") cfg.orcaAutoAddRepo = raw.orcaAutoAddRepo;
     if (typeof raw.reviewSkill === "string" && raw.reviewSkill) cfg.reviewSkill = raw.reviewSkill;
     if (typeof raw.fixSkill === "string" && raw.fixSkill) cfg.fixSkill = raw.fixSkill;
