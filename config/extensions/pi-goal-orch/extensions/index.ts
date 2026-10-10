@@ -10,11 +10,13 @@ import { registerPlannerTool } from "../src/planner.ts";
 import { registerRunnerEvents } from "../src/runner.ts";
 import { restoreFromBranch } from "../src/state.ts";
 import { registerReportTool } from "../src/finish.ts";
-import { maybeStartPending, registerStrayCdGuard } from "../src/launch.ts";
+import { maybeStartPending } from "../src/launch.ts";
+import { registerWorktreeGuard, setSessionCwd } from "../src/guard.ts";
 
 export default function (pi: ExtensionAPI) {
   // Restore branch-local state when a session starts or the tree changes
   pi.on("session_start", async (_event, ctx) => {
+    setSessionCwd(ctx?.cwd);
     restoreFromBranch(ctx);
     // `/goal new` launched this Pi inside a fresh worktree → pick up its goal
     try {
@@ -31,5 +33,5 @@ export default function (pi: ExtensionAPI) {
   registerReportTool(pi);
   registerRunnerEvents(pi);
   registerGoalCommand(pi);
-  registerStrayCdGuard(pi);
+  registerWorktreeGuard(pi);
 }

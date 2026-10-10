@@ -23,6 +23,7 @@ import { loadConfig } from "./config.ts";
 import { rememberCtx } from "./finish.ts";
 import { setupIsolation } from "./git.ts";
 import { listGoals, normPath, upsertGoal } from "./registry.ts";
+import { repoTop } from "./git.ts";
 import { folderBusy, formatGoalList, newGoal } from "./launch.ts";
 import { newRunId } from "./results.ts";
 import { formatStatus, getState, persistState, setState } from "./state.ts";
@@ -31,7 +32,8 @@ import { effectivePauseReason, emptyGoalState, type GitMode, type GoalMode, type
 const HELP = [
   "/goal new [--hitl] <mô tả> — tạo worktree riêng (Orca Multi-task) + mở Pi MỚI trong đó chạy goal (session này vẫn rảnh)",
   "/goal list               — mọi goal trong registry (mọi worktree/session)",
-  "/goal <mô tả>            — lập kế hoạch + chạy AFK (tự chuyển stage)",
+  "/goal <mô tả>            — (repo git) = /goal new: worktree riêng + Pi MỚI chạy goal trong đó; session này không chạy stage nào",
+  "/goal --here <mô tả>     — chạy ngay trong session này (worktree vẫn tạo; lệnh/ghi file ngoài worktree bị CHẶN)",
   "/goal --hitl <mô tả>     — chạy HITL (dừng sau mỗi stage)",
   "/goal --worktree|--branch|--no-git <mô tả> — cách cô lập git (mặc định: worktree, đổi trong goal-orch.json)",
   "/goal status             — trạng thái + branch/worktree/base (⏸ = stage checkpoint)",
@@ -49,9 +51,14 @@ function isActive(state: GoalState): boolean {
 }
 
 /** Strip --worktree / --branch / --no-git flags. */
-function parseGitFlags(raw: string): { git?: GitMode; text: string } {
+function parseGitFlags(raw: string): { git?: GitMode; here?: boolean; text: string } {
   let git: GitMode | undefined;
+  let here = false;
   const text = raw
+    .replace(/(^|\s)--(here|in-session)(?=\s|$)/gi, (_m, pre: string) => {
+      here = true;
+      return pre;
+    })
     .replace(/(^|\s)--(worktree|branch|no-git)(?=\s|$)/gi, (_m, pre: string, flag: string) => {
       const f = flag.toLowerCase();
       git = f === "no-git" ? "none" : (f as GitMode);
@@ -59,7 +66,7 @@ function parseGitFlags(raw: string): { git?: GitMode; text: string } {
     })
     .replace(/\s+/g, " ")
     .trim();
-  return { git, text };
+  return { git, here, text };
 }
 
 /** Strip --hitl / --afk / --auto flags; return the requested mode (if any) and the remaining text. */
@@ -282,6 +289,7 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
         requested = { mode: inner.mode ?? (sub === "hitl" ? "HITL" : "AFK"), text: inner.text };
       }
       const goalText = requested.text;
+      if ((sub === "hitl" || sub === "auto" || sub === "afk") && rest && parseGitFlags(rest).here) gitFlags.here = true;
       if (!goalText) {
         notify(ctx, `Missing goal description.\n${HELP}`, "warning");
         return;
@@ -314,6 +322,13 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
       const cfg = loadConfig();
       const cwd = ctx.cwd || process.cwd();
       const gitMode = gitFlags.git ?? cfg.git;
+      // Default: worktree goals run in their OWN Pi session whose cwd is the worktree
+      // (Pi cannot move this session's cwd; prompt-only isolation was ignored by models).
+      if (gitMode === "worktree" && !gitFlags.here && repoTop(cwd)) {
+        const r = newGoal(cwd, goalText, mode, !!requested.mode);
+        notify(ctx, `${r.message}${r.ok ? '\nThis session runs NO stages of it. (`/goal --here <goal>` = old in-session mode.)\n\n' + formatGoalList() : ""}`, r.ok ? "info" : "error");
+        return;
+      }
       // 4a: never two goals in one folder (branch / no-git modes work in cwd itself)
       if (gitMode !== "worktree") {
         const busy = folderBusy(cwd);
@@ -336,6 +351,7 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
         ...(iso.git ? { git: iso.git } : {}),
         workdir: iso.git?.workdir ?? cwd,
         runId: newRunId(goalText),
+        ...(iso.git?.mode === "worktree" ? { here: true } : {}),
       };
       if (!iso.git) {
         // register no-git goals too, so a second goal in this folder is refused
@@ -348,7 +364,7 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
       pi.sendUserMessage(buildPlanKickoffMessage(pi, goalText, mode), { deliverAs: "followUp" });
       notify(
         ctx,
-        `Planning goal (${mode}) with ${skills.length} skill(s). Model should call submit_goal_plan…\n${iso.notes.join("\n")}`,
+        `Planning goal (${mode}) with ${skills.length} skill(s). Model should call submit_goal_plan…\n${iso.notes.join("\n")}${planning.here ? `\nIn-session mode: shell commands / file writes outside ${planning.workdir} are BLOCKED.` : ""}`,
         "info",
       );
     },

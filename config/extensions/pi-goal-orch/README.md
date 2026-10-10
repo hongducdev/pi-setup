@@ -83,6 +83,10 @@ Khi `cwd` nằm trong git repo, goal được cô lập ngay lúc `/goal …`:
 
 ### `/goal new` — mỗi goal một worktree + một Pi riêng (kiểu Orca Multi-task)
 
+**Mặc định (từ 2026-10-11):** trong repo git, `/goal <mô tả>` = `/goal new <mô tả>` — tạo worktree, mở Pi MỚI trong worktree chạy goal; session đang gõ lệnh **không chạy stage nào** (chỉ in đường dẫn + `/goal list`). Stage chỉ chạy ở session "chủ" (cwd = worktree). Muốn chạy ngay trong session hiện tại: `/goal --here <mô tả>`.
+
+**Chặn cứng (tool_call):** khi có goal đang chạy (mọi chế độ), lệnh shell có cwd hiệu lực ngoài worktree (cwd session, `cd`/`Set-Location`/`pushd`/`git -C`, `/mnt/<ổ>/` của WSL) bị **BLOCK** kèm lệnh viết lại dùng worktree; chỉ cho lệnh chỉ-đọc (git log/status/diff/show, ls, cat, rg…, không redirect). `write`/`edit`/tool ghi file ngoài worktree bị chặn; `read`/`grep` vẫn được. So sánh đường dẫn qua realpath (8.3 short path, không phân biệt hoa thường); thư mục temp được phép.
+
 Pi không đổi được cwd của session, nên chạy nhiều goal trong cùng một session/thư mục dễ đụng nhau (`index.lock`, ghi đè file). `/goal new [--hitl] <mô tả>`:
 
 1. Tạo worktree mới cho goal (qua `orca worktree create` nếu Orca đang chạy — hiện trong Orca UI như nút **Multi-task → Try it out**; không thì `git worktree add`). Branch `goal/<slug>-<ngày>`, không đụng file chưa commit ở main tree.
@@ -145,7 +149,7 @@ Pi không đổi được cwd của session, nên chạy nhiều goal trong cùn
 1. **Trùng lệnh `/goal`**: có thể xung đột với package khác (ví dụ `@peeraponw/pi-goal`). Pi sẽ suffix tên (`goal:1`, …) theo thứ tự load — kiểm tra bằng `/` trong editor.
 2. **Soft-prompt limitation**: model *có thể* bỏ qua skill; không có API ép invoke. Nên skill rõ ràng + `SKILL.md` dễ đọc.
 3. Anti-signal vẫn có thể false-positive (ví dụ báo cáo kết thúc bằng một câu hỏi tu từ). Dùng `/goal next` hoặc `/goal skip` khi cần.
-4. Git: với `/goal <mô tả>` trong session hiện tại, model *có thể* lỡ chạy lệnh ngoài worktree — khối Git isolation chỉ là hướng dẫn (Pi không cho đổi cwd); có cảnh báo cd lạc. Dùng `/goal new` để Pi chạy hẳn trong worktree.
+4. Git: Pi không cho đổi cwd session, nên `/goal` mặc định mở Pi mới trong worktree. Với `/goal --here`, lệnh/ghi file ngoài worktree bị chặn cứng (không chỉ cảnh báo).
 5. `--carry` (mang thay đổi chưa commit sang worktree) chưa làm — cố ý, để không đụng việc dở của bạn.
 6. Starter package — chỉnh `src/runner.ts` / `src/planner.ts` theo workflow của bạn.
 
@@ -169,7 +173,8 @@ pi-goal-orch/
     ├── orca.ts       # Orca CLI (tuỳ chọn)
     ├── registry.ts   # registry goal song song + merge lock
     ├── finish.ts     # review → fix → merge queue, goal_report
-    ├── launch.ts     # /goal new, /goal list, khoá thư mục, cảnh báo cd lạc
+    ├── launch.ts     # /goal new, /goal list, khoá thư mục
+    ├── guard.ts      # chặn cứng lệnh/ghi file ngoài worktree (tool_call)
     ├── results.ts    # .pi-goal/<run>/stage-N.md
     └── pi-shim.d.ts  # stub types khi chưa có peer package
 ```

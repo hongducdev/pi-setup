@@ -18,6 +18,8 @@ import { formatStatus, getState, persistState, setState } from "./state.ts";
 import type { GoalStage, GoalState, PauseReason } from "./types.ts";
 import { checkOverlap, gitPromptBlock, handleRoleOutcome, pauseGit, rememberCtx, runFinish } from "./finish.ts";
 import { patchGoal } from "./registry.ts";
+import { getSessionCwd } from "./guard.ts";
+import { insideDir } from "./launch.ts";
 import { previousResultsBlock, stageFile, writeStageResult } from "./results.ts";
 
 /**
@@ -176,6 +178,11 @@ function pauseForUser(
 export function kickoffStage(pi: ExtensionAPI, state?: GoalState): void {
   const s = state ?? getState();
   if (s.status !== "running" && s.status !== "paused") return;
+  // only the owner session runs stages: cwd == worktree (or explicit --here)
+  if (s.git?.mode === "worktree" && !s.here && !insideDir(getSessionCwd(), s.git.workdir)) {
+    console.warn(`[pi-goal-orch] not the owner session of goal (${s.git.workdir}); stage not started here`);
+    return;
+  }
   const stage = s.stages[s.currentIndex];
   if (!stage) {
     finishGoal(pi, s);

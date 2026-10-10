@@ -111,6 +111,8 @@ export interface GoalState {
   runId?: string;
   /** registry id for goals without git isolation */
   regId?: string;
+  /** worktree goal deliberately run in a session whose cwd is NOT the worktree (`/goal --here`) */
+  here?: boolean;
 }
 
 export const ENTRY_TYPE = "goal-orch-state" as const;
@@ -193,6 +195,7 @@ export function normalizeGoalState(raw: unknown): GoalState {
   }
   if (typeof d.lastAssistantText === "string") out.lastAssistantText = d.lastAssistantText;
   for (const k of ["workdir", "runId", "regId"] as const) if (typeof d[k] === "string") out[k] = d[k] as string;
+  if (d.here === true) out.here = true;
   return out;
 }
 

@@ -163,7 +163,8 @@ function keyOf(p: string): string {
   const tail = rest.join("/");
   return tail ? `${realKey(cur)}/${process.platform === "win32" ? tail.toLowerCase() : tail}` : realKey(cur);
 }
-const inside = (p: string, dir: string) => {
+export const insideDir = (p: string, dir: string) => {
+  if (!p || !dir) return false;
   const a = keyOf(p), b = keyOf(dir);
   return a === b || a.startsWith(b + "/");
 };
@@ -175,10 +176,10 @@ export function strayCdWarning(state: GoalState, command: string, cwd: string): 
   if (!home) return null;
   const myId = state.git?.id ?? state.regId;
   for (const t of cdTargets(command, cwd)) {
-    if (inside(t, home)) continue;
-    const other = listGoals().find((g) => g.id !== myId && isLive(g) && inside(t, g.workdir));
+    if (insideDir(t, home)) continue;
+    const other = listGoals().find((g) => g.id !== myId && isLive(g) && insideDir(t, g.workdir));
     if (other) return `⚠ goal command enters another goal's folder ${other.workdir} ("${other.goal.slice(0, 50)}") — this goal works in ${home}.`;
-    if (state.git && inside(t, state.git.repo)) return `⚠ goal command enters the main checkout ${t} — this goal's worktree is ${home} (the main tree may hold the user's uncommitted work).`;
+    if (state.git && insideDir(t, state.git.repo)) return `⚠ goal command enters the main checkout ${t} — this goal's worktree is ${home} (the main tree may hold the user's uncommitted work).`;
   }
   return null;
 }
