@@ -21,7 +21,6 @@ Repo chỉ chứa cấu hình, extension và font dùng chung được. **Không
 | `npm:pi-advisor-flow` | Executor / Advisor flow (ý kiến thứ hai), cấu hình ở `config/advisor.json`. |
 | `npm:pi-mcp-adapter` | MCP adapter (MCP builtin của Pi bị tắt bằng `"extensions": ["-builtin:mcp"]`). |
 | `npm:pi-lens` | Chẩn đoán code real-time (LSP, linter, formatter, type-check). Cấu hình ở `pi-lens/`. |
-| `npm:pi-hashline-edit-pro` | `read` trả về `anchor│nội dung`; sửa bằng `replace`/`insert` theo anchor (anchor cũ bị từ chối, không fuzzy), `undo_last_change`. Tắt tool `edit` gốc. Không dùng chung với `pi-agent-ide`. Lưu ý: pi-lens 4.4.2 chưa nhận diện `replace` dạng `text` của hashline 6.x nên chẩn đoán tự động chỉ chạy sau `write`. |
 | `npm:pi-model-fallback` | Tự chuyển sang model dự phòng khi provider lỗi (429, 5xx). |
 | `extensions\pi-goal-orch` | Lệnh `/goal`: chạy chuỗi skill theo stage; mỗi goal một worktree/branch (qua Orca nếu đang chạy), tự review rồi merge. |
 | `npm:pi-skillful` | Cải thiện gọi/hiển thị skill; phím tắt toggle slot 1–6 = `ck-cook`, `ck-fix`, `ck-debug`, `ck-code-review`, `ck-git`, `ck-ask`. |

@@ -21,8 +21,7 @@
     "npm:pi-lens",
     "npm:pi-model-fallback",
     "extensions\\pi-goal-orch",
-    "npm:pi-skillful",
-    "npm:pi-hashline-edit-pro"
+    "npm:pi-skillful"
   ],
   "theme": "dark",
   "extensions": [
