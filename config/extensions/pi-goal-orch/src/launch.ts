@@ -107,7 +107,7 @@ export function maybeStartPending(pi: ExtensionAPI, ctx: ExtensionContext, delay
     } catch {
       /* no UI */
     }
-    pi.sendUserMessage(buildPlanKickoffMessage(pi, entry.goal, mode));
+    pi.sendUserMessage(buildPlanKickoffMessage(pi, entry.goal, mode), { deliverAs: "followUp" });
   };
   if (delayMs > 0) setTimeout(kick, delayMs).unref?.();
   else kick();

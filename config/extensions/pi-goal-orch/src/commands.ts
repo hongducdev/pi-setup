@@ -345,7 +345,7 @@ export function registerGoalCommand(pi: ExtensionAPI): void {
       setState(planning);
       persistState(pi, planning);
 
-      pi.sendUserMessage(buildPlanKickoffMessage(pi, goalText, mode));
+      pi.sendUserMessage(buildPlanKickoffMessage(pi, goalText, mode), { deliverAs: "followUp" });
       notify(
         ctx,
         `Planning goal (${mode}) with ${skills.length} skill(s). Model should call submit_goal_plan…\n${iso.notes.join("\n")}`,

@@ -218,7 +218,7 @@ export function kickoffStage(pi: ExtensionAPI, state?: GoalState): void {
   lastFinalText = "";
   lastAdvanceKey = "";
   if (s.git) checkOverlap(next);
-  pi.sendUserMessage(message);
+  pi.sendUserMessage(message, { deliverAs: "followUp" });
 }
 
 /**

@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "allow": ["antigravity/gemini-*"],
+  "tiers": {
+    "plan":  ["antigravity/gemini-3.8-flash", "antigravity/gemini-3.7-flash", "antigravity/gemini-3.6-flash", "antigravity/gemini-3.5-flash", "antigravity/gemini-3.1-pro"],
+    "code":  ["antigravity/gemini-3.8-flash", "antigravity/gemini-3.7-flash", "antigravity/gemini-3.6-flash", "antigravity/gemini-3.5-flash", "antigravity/gemini-3.1-pro"],
+    "hard":  ["antigravity/gemini-3.8-flash", "antigravity/gemini-3.1-pro", "antigravity/gemini-3.7-flash", "antigravity/gemini-3.6-flash"],
+    "quick": ["antigravity/gemini-3.8-flash", "antigravity/gemini-3.7-flash", "antigravity/gemini-3.5-flash-lite", "antigravity/gemini-3.1-flash-lite"]
+  },
+  "subagents": { "Plan": "plan", "Explore": "plan", "general-purpose": "auto", "*": "auto" },
+  "cooldownMinutes": 15,
+  "restore": true
+}

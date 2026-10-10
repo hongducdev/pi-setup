@@ -15,6 +15,12 @@
  *   - @tintinweb `Agent` tool calls WITHOUT an explicit `model`: subagent_type mapping,
  *     else tools / task text (`description` + `prompt`) keywords. Explicit models untouched.
  *
+ * Safety: the session model is only switched at turn boundaries (input while idle,
+ * before_agent_start). A skill detected mid-turn (SKILL.md read inside a running turn)
+ * is deferred to the next turn — switching provider mid tool-use breaks
+ * tool_use/tool_result pairing on some backends.
+ * `allow` (exact refs or provider/prefix* globs) restricts preferences AND auto picks.
+ *
  * Config: ~/.pi/agent/model-router.json   Command: /router [status|on|off|reload]
  */
 import fs from "node:fs";
@@ -29,6 +35,8 @@ export interface RouterConfig {
   enabled: boolean;
   /** preference list per tier (provider/id), tried in order before the automatic pick */
   tiers: Record<Tier, string[]>;
+  /** if non-empty: only these may be picked (provider/id, provider/prefix*, provider/*) */
+  allow: string[];
   /** never auto-pick these (provider/id or provider/*) */
   exclude: string[];
   /** skill-name regexes per tier (hard/quick checked on the prompt text too) */
@@ -51,6 +59,7 @@ export const DEFAULTS: RouterConfig = {
     hard: [],
     quick: [],
   },
+  allow: [],
   exclude: [],
   rules: {
     plan: ["review", "plan", "scout", "brainstorm", "(^|-)ask($|-)", "research", "audit", "explore", "analy", "spec", "design", "investigat"],
@@ -97,6 +106,7 @@ export function loadConfig(): RouterConfig {
   return {
     enabled: raw.enabled ?? DEFAULTS.enabled,
     tiers,
+    allow: Array.isArray(raw.allow) ? raw.allow : DEFAULTS.allow,
     exclude: raw.exclude ?? DEFAULTS.exclude,
     rules: { ...DEFAULTS.rules, ...(raw.rules ?? {}) },
     skills: { ...(raw.skills ?? {}) },
@@ -201,10 +211,19 @@ export interface Need {
   images?: boolean;
 }
 
+export function matchRef(k: string, pat: string): boolean {
+  return pat.endsWith("*") ? k.startsWith(pat.slice(0, -1)) : k === pat;
+}
+
+export function allowed(m: any, cfg: RouterConfig): boolean {
+  return !cfg.allow?.length || cfg.allow.some((p) => matchRef(key(m), p));
+}
+
 export function eligible(m: any, cfg: RouterConfig, cooldown: Map<string, number>, need: Need): string | null {
   if (!m || (m.type && m.type !== "chat")) return "not a chat model";
   const k = key(m);
-  if (cfg.exclude.some((e) => e === k || (e.endsWith("/*") && k.startsWith(e.slice(0, -1))))) return "excluded";
+  if (!allowed(m, cfg)) return "not in allow list";
+  if (cfg.exclude.some((e) => matchRef(k, e))) return "excluded";
   const until = cooldown.get(k);
   if (until && until > Date.now()) return `cooldown ${Math.ceil((until - Date.now()) / 60000)}m (429/402)`;
   if (need.images && Array.isArray(m.input) && !m.input.includes("image")) return "no image input";
@@ -280,6 +299,15 @@ export default function (pi: ExtensionAPI) {
   let settingModel = false;
   let runSeq = 0;
   let lastNote = "";
+  /** skill detected mid-turn → applied at the next before_agent_start */
+  let pending: { tier: Tier; why: string; need: Need } | null = null;
+  const idle = (ctx: any) => {
+    try {
+      return typeof ctx?.isIdle === "function" ? !!ctx.isIdle() : true;
+    } catch {
+      return true;
+    }
+  };
 
   function notify(ctx: ExtensionContext | undefined, msg: string, level: "info" | "warning" = "info") {
     try {
@@ -344,7 +372,11 @@ export default function (pi: ExtensionAPI) {
     if (!cfg.enabled || typeof event?.text !== "string" || isChild(ctx)) return { action: "continue" };
     const skill = skillFromText(event.text, knownSkills());
     const c = skill ? classifySkill(skill, cfg, event.text) : null;
-    if (c) await route(ctx, c.tier, c.why, { images: Array.isArray(event.images) && event.images.length > 0 });
+    if (c) {
+      const need = { images: Array.isArray(event.images) && event.images.length > 0 };
+      if (idle(ctx)) await route(ctx, c.tier, c.why, need);
+      else pending = { tier: c.tier, why: c.why, need }; // steer/followUp while streaming → next turn
+    }
     return { action: "continue" };
   });
 
@@ -357,7 +389,8 @@ export default function (pi: ExtensionAPI) {
       if (isChild(ctx)) return;
       const skill = skillFromPath(input.path ?? input.file_path ?? "");
       const c = skill ? classifySkill(skill, cfg) : null;
-      if (c) await route(ctx, c.tier, c.why, {});
+      // inside a running turn: never switch now (tool_use/tool_result pairing) → defer
+      if (c) pending = { tier: c.tier, why: `${c.why} (deferred)`, need: {} };
       return;
     }
     if (name === "Agent" && !input.model && typeof input.subagent_type === "string") {
@@ -378,6 +411,13 @@ export default function (pi: ExtensionAPI) {
     if (!m) return;
     cooldown.set(key(m), Date.now() + cfg.cooldownMinutes * 60_000);
     notify(ctx, `${key(m)} returned ${st} → skipped for ${cfg.cooldownMinutes} min`, "warning");
+  });
+
+  pi.on("before_agent_start", async (_e: any, ctx: any) => {
+    if (!pending || isChild(ctx)) return;
+    const p = pending;
+    pending = null;
+    await route(ctx, p.tier, p.why, p.need);
   });
 
   pi.on("agent_start", async () => {
@@ -424,6 +464,8 @@ export default function (pi: ExtensionAPI) {
       } else if (sub === "reload") cfg = loadConfig();
       const av = available(ctx);
       const lines = [`Model router: ${cfg.enabled ? "ON" : "OFF"}  (config: ${CONFIG_PATH})`, `Available (${av.length}): ${av.map(key).join(", ")}`];
+      if (cfg.allow.length) lines.push(`Allow: ${cfg.allow.join(", ")} → ${av.filter((m) => allowed(m, cfg)).length} model(s)`);
+      if (pending) lines.push(`Pending (next turn): ${pending.why} → ${pending.tier}`);
       for (const t of TIERS) {
         const p = pickModel(av, t, cfg, cooldown);
         lines.push(`${t.padEnd(5)} → ${p.model ? key(p.model) : "(none)"} — ${p.why}`);
