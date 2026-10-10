@@ -60,6 +60,8 @@ const PATH_RE = String.raw`("[^"]+"|'[^']+'|[^\s;&|<>(){}"']+)`;
 type Settings = { enabled: boolean; lines: number; widget: boolean; watchdog: boolean; stallMin: number | null; maxMin: number | null; warnSec: number; lang: "auto" | Lang };
 const DEFAULTS: Settings = { enabled: true, lines: 8, widget: false, watchdog: true, stallMin: null, maxMin: null, warnSec: 60, lang: "auto" };
 type Run = {
+	/** set for runs inside a @tintinweb subagent session (shown in the parent widget) */
+	agent?: string;
 	id: string; tool: string; command: string; start: number; ctx: any;
 	partial: string; logs: string[][]; tail: string[]; source: string; logPath?: string;
 	lastActivity: number; logSig: string; maxGap: number; limits: Limits; timeoutSec?: number; warning?: string; warned?: string; kept?: boolean;
@@ -330,7 +332,36 @@ export function verdict(a: Analysis, elapsed: string, lang: Lang = "en"): string
 }
 
 // ---------- extension ----------
+/**
+ * Process-wide bus: @tintinweb subagents run as child sessions in the same process with
+ * their own live-log instance but NO UI (hasUI false, mode "print"). Child runs are
+ * published here so the UI instance (parent) shows them in its widget, and a child's
+ * auto-stop summary is delivered to the parent session (the child run is already over:
+ * ctx.abort() in the child aborts only the child; the parent's Agent call returns "aborted").
+ */
+type Bus = {
+	parent?: { id: number; send: (msg: string) => void; wake: () => void; notify: (m: string, level: string) => void };
+	childRuns: Map<string, Run>;
+	agents: Map<string, string>;
+	seq: number;
+};
+const BUS: Bus = ((globalThis as any).__liveLogBus ??= { childRuns: new Map(), agents: new Map(), seq: 0 });
+
 export default function liveLog(pi: ExtensionAPI) {
+	const instanceId = ++BUS.seq;
+	/** a no-UI instance while a UI instance exists in this process = subagent child session */
+	const isChild = (ctx: any) => ctx?.hasUI === false && !!BUS.parent && BUS.parent.id !== instanceId;
+	const claimParent = (ctx: any) => {
+		if (ctx?.hasUI !== true) return;
+		ui = ctx?.ui ?? ui;
+		BUS.parent = {
+			id: instanceId,
+			send: (msg: string) => { try { (pi as any).sendUserMessage?.(msg, { deliverAs: "followUp" }); } catch { /* ignore */ } },
+			wake: () => ensureTimer(),
+			notify: (m: string, level: string) => notify(undefined, m, level),
+		};
+	};
+	pi.on("session_start", (_e: any, ctx: any) => { try { claimParent(ctx); } catch { /* ignore */ } });
 	let settings: Settings = { ...DEFAULTS };
 	try { settings = { ...settings, ...JSON.parse(readFileSync(SETTINGS, "utf8")) }; } catch { /* defaults */ }
 	const save = () => { try { writeFileSync(SETTINGS, JSON.stringify(settings, null, 2)); } catch { /* ignore */ } };
@@ -382,14 +413,16 @@ export default function liveLog(pi: ExtensionAPI) {
 	}
 
 	// ----- optional widget above the editor -----
-	const latestRun = () => [...runs.values()].filter((r) => Date.now() - r.start >= SHOW_AFTER_MS).pop();
+	const latestRun = () => [...runs.values()].filter((r) => useWidget() && Date.now() - r.start >= SHOW_AFTER_MS).pop();
+	/** subagent runs are never visible as rows in this TUI → always shown in the widget */
+	const childRun = () => BUS.parent?.id === instanceId ? [...BUS.childRuns.values()].filter((r) => Date.now() - r.start >= SHOW_AFTER_MS).pop() : undefined;
 	function render(width: number, theme: any): string[] {
 		const w = Math.max(20, width), c = (k: string, s: string) => { try { return theme?.fg ? theme.fg(k, s) : s; } catch { return s; } };
 		if (manual) return [c("accent", fit(`▸ tail ${manual.label}`, w)),
 			...(manual.tail.length ? manual.tail : ["(file empty or not found yet)"]).map((l) => c("dim", fit(`  ${l}`, w)))];
-		const run = useWidget() ? latestRun() : undefined;
+		const run = latestRun() ?? childRun();
 		if (run) {
-			const head = `▸ ${fmtElapsed(Date.now() - run.start)} · ${run.command.replace(/\s+/g, " ")}`;
+			const head = `▸ ${run.agent ? `⤷ ${run.agent}: ` : ""}${fmtElapsed(Date.now() - run.start)} · ${run.command.replace(/\s+/g, " ")}`;
 			const src = run.source ? ` [${run.source}]` : "";
 			const lines = settings.watchdog ? [...runLines(run), limitsHeader(run.limits, run.timeoutSec)] : runLines(run);
 			return [c("accent", fit(fit(head, w - src.length) + src, w)),
@@ -442,7 +475,11 @@ export default function liveLog(pi: ExtensionAPI) {
 		if (!reason) return;
 		if (left <= 0) return void stopRun(run, reason, kind, kind === "max" ? String(run.limits.maxMin) : fmtElapsed(idle));
 		run.warning = `${reason}, auto-stop in ${Math.ceil(left / 1000)}s (/livelog keep to continue)`;
-		if (run.warned !== kind) { run.warned = kind; notify(run.ctx, `live-log: ${run.warning}`, "warning"); }
+		if (run.warned !== kind) {
+			run.warned = kind;
+			if (run.agent) BUS.parent?.notify(`live-log: ⤷ ${run.agent}: ${run.warning}`, "warning");
+			else notify(run.ctx, `live-log: ${run.warning}`, "warning");
+		}
 	}
 
 	// ----- language of the extension's own texts: follows the conversation (or /livelog lang) -----
@@ -488,7 +525,8 @@ export default function liveLog(pi: ExtensionAPI) {
 		run.warning = line;
 		if (useWidget()) { finalLine = { ok: false, text: line }; clearTimeout(finalTimer); finalTimer = setTimeout(() => { finalLine = undefined; void tick(); }, 15000); (finalTimer as any).unref?.(); }
 		try { run.ctx?.abort?.(); } catch { /* ignore */ }
-		notify(run.ctx, T.notify(line, why), analysis.hasError ? "error" : "warning");
+		if (run.agent) BUS.parent?.notify(`⤷ ${run.agent}: ${T.notify(line, why)}`, analysis.hasError ? "error" : "warning");
+		else notify(run.ctx, T.notify(line, why), analysis.hasError ? "error" : "warning");
 		try {
 			const M = T.md;
 			const md = `# ${M.title}\n\n- ${M.when}: ${new Date(at).toLocaleString("sv-SE")}\n- ${M.cmd}: \`${run.command.replace(/\s+/g, " ").slice(0, 300)}\`\n` +
@@ -505,6 +543,17 @@ export default function liveLog(pi: ExtensionAPI) {
 		const st = run.stopped as any;
 		if (!st?.analysis || st.sent) return; // stopRun calls again once the analysis is ready
 		st.sent = true;
+		if (run.agent) {
+			// the child session is over (abort ended it) → tell the parent instead
+			const elapsed = fmtElapsed(st.at - run.start), cmd = run.command.replace(/\s+/g, " ");
+			BUS.parent?.send(`[live-log] Subagent "${run.agent}" was auto-stopped while running \`${run.tool}\` after ${elapsed} (${reasonText("en", st.kind, st.detail)}); its Agent call returned as aborted.\n` +
+				`Command: ${cmd.length > 300 ? cmd.slice(0, 300) + "…" : cmd}\n` +
+				`Local pre-analysis: ${verdict(st.analysisEn, elapsed, "en")}\n` +
+				`Last ${st.lines.length} lines of ${st.from}:\n\`\`\`\n${st.lines.join("\n") || "(no output)"}\n\`\`\`\n` +
+				"Give the user a short summary (command, runtime, stop reason, error yes/no with the exact lines, why it took long, next step) in the conversation's language. " +
+				"Do not blindly re-run the subagent: rerun only with streamed output (`cmd 2>&1 | tee <log>`) or a longer limit (/livelog stall|max <min>) if the cause is unclear.");
+			return;
+		}
 		const elapsed = fmtElapsed(st.at - run.start), cmd = run.command.replace(/\s+/g, " ");
 		const msg = `[live-log] Auto-stopped \`${run.tool}\` after ${elapsed} (${reasonText("en", st.kind, st.detail)}).\n` +
 			`Command: ${cmd.length > 300 ? cmd.slice(0, 300) + "…" : cmd}\n` +
@@ -545,9 +594,10 @@ export default function liveLog(pi: ExtensionAPI) {
 				}
 				watchdog(run, now);
 			}
-			const wantWidget = manual || (useWidget() && settings.enabled && latestRun()) || (useWidget() && finalLine);
+			const kids = BUS.parent?.id === instanceId && BUS.childRuns.size > 0;
+			const wantWidget = manual || (settings.enabled && (latestRun() || childRun())) || (useWidget() && finalLine);
 			if (wantWidget) { show(); requestRender(); } else hide();
-			if (!manual && !runs.size && !finalLine && timer) { clearInterval(timer); timer = undefined; }
+			if (!manual && !runs.size && !kids && !finalLine && timer) { clearInterval(timer); timer = undefined; }
 		} catch { /* never throw into Pi */ } finally { busy = false; }
 	}
 	const ensureTimer = () => { if (!timer) { timer = setInterval(() => void tick(), 1000); (timer as any).unref?.(); } };
@@ -555,15 +605,28 @@ export default function liveLog(pi: ExtensionAPI) {
 	// ----- tool events -----
 	pi.on("tool_execution_start", (event: any, ctx: any) => {
 		try {
+			claimParent(ctx);
+			if (BUS.parent?.id === instanceId && event?.toolName === "Agent") {
+				BUS.agents.set(event.toolCallId, String(event?.args?.name || event?.args?.description || event?.args?.subagent_type || "subagent"));
+				return;
+			}
 			const command = event?.args?.command;
 			if (!settings.enabled || typeof command !== "string" || !command.trim()) return;
-			ui = ctx?.ui ?? ui;
+			const child = isChild(ctx);
+			if (!child) ui = ctx?.ui ?? ui;
 			const cwd = ctx?.cwd ?? process.cwd(), now = Date.now();
 			const info = inspectCommand(command, cwd);
 			const limits = computeLimits(classify(command, info.scripts, info.dir), history, settings);
 			const timeoutSec = typeof event?.args?.timeout === "number" ? event.args.timeout : undefined;
 			runs.set(event.toolCallId, { id: event.toolCallId, tool: event.toolName ?? "shell", command, start: now, ctx, timeoutSec,
 				partial: "", logs: info.logs, tail: [], source: "", lastActivity: now, logSig: "", maxGap: 0, limits });
+			if (child) {
+				const names = [...BUS.agents.values()];
+				const run = runs.get(event.toolCallId)!;
+				run.agent = names.length === 1 ? names[0] : names.length ? `subagent (${names.length} running)` : "subagent";
+				BUS.childRuns.set(`${instanceId}:${run.id}`, run);
+				BUS.parent?.wake();
+			}
 			ensureTimer();
 		} catch { /* ignore */ }
 	});
@@ -581,9 +644,11 @@ export default function liveLog(pi: ExtensionAPI) {
 
 	pi.on("tool_execution_end", (event: any) => {
 		try {
+			if (BUS.agents.delete(event?.toolCallId)) return;
 			const run = runs.get(event?.toolCallId);
 			if (!run) return;
 			runs.delete(run.id);
+			if (run.agent) { BUS.childRuns.delete(`${instanceId}:${run.id}`); BUS.parent?.wake(); }
 			if (run.stopped) { void sendFollowUp(run); return void tick(); }
 			const ms = event?.durationMs ?? Date.now() - run.start;
 			if (!event?.isError) record(run, ms);
@@ -660,5 +725,11 @@ export default function liveLog(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_shutdown", () => { try { if (timer) clearInterval(timer); timer = undefined; clearTimeout(finalTimer); } catch { /* ignore */ } });
+	pi.on("session_shutdown", () => {
+		try {
+			if (timer) clearInterval(timer); timer = undefined; clearTimeout(finalTimer);
+			for (const [k, r] of BUS.childRuns) if (k.startsWith(`${instanceId}:`) && !r.stopped) BUS.childRuns.delete(k);
+			if (BUS.parent?.id === instanceId) BUS.parent = undefined;
+		} catch { /* ignore */ }
+	});
 }

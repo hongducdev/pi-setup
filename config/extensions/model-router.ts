@@ -1,18 +1,19 @@
 /**
- * model-router — route planning/review work and coding work to different models.
+ * model-router — pick a model per task from the models available in Pi.
  *
- *   plan/review (ck-plan, ck-code-review, ck-scout, ck-ask, brainstorm, review…) → models.plan
- *   coding      (ck-cook, ck-fix, implement, debug, test…)                        → models.code
+ * Tiers: plan (read/plan/review/research) · code (edit/implement/fix) ·
+ *        hard (deep debugging, architecture, large refactors) · quick (trivial edits).
+ * Per tier: configured preference list first, then an automatic pick among
+ * `modelRegistry.getAvailable()` (logged-in providers) using registry metadata
+ * (reasoning, context window, cost, name hints). Skips models in cooldown after a
+ * 429/402 (15 min) and models lacking a needed capability (images).
  *
- * Triggers (Pi 1.1.0 API, verified in dist/core/extensions/types.d.ts):
- *   - `input` event (interactive, rpc and extension messages, before skill expansion):
- *       `/skill:<name> …`, `Use the skill "<name>"` (pi-goal-orch stages), `/<name>` skill commands
- *   - `tool_call` read of …/<skill>/SKILL.md (model loads a skill on its own) → switch for the next request
- *   - `tool_call` of the @tintinweb `Agent` tool without an explicit `model`:
- *       fills `input.model` from `subagents` mapping (Plan/Explore → plan, general-purpose → code)
- * The previous model is restored when the agent settles (unless the user picked a
- * model by hand meanwhile). Unavailable target (unknown id / no auth / setModel false)
- * → stay on the current model and notify.
+ * Applies to:
+ *   - main session skill invocations: `/skill:<name>`, `/<skill>`, pi-goal-orch stages
+ *     ("Use the skill …"), the model reading …/<skill>/SKILL.md. Plain chat is untouched.
+ *     Previous model restored when the agent settles (not if you picked one meanwhile).
+ *   - @tintinweb `Agent` tool calls WITHOUT an explicit `model`: subagent_type mapping,
+ *     else tools / task text (`description` + `prompt`) keywords. Explicit models untouched.
  *
  * Config: ~/.pi/agent/model-router.json   Command: /router [status|on|off|reload]
  */
@@ -21,48 +22,89 @@ import os from "node:os";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-type Kind = "plan" | "code";
+export type Tier = "plan" | "code" | "hard" | "quick";
+const TIERS: Tier[] = ["plan", "code", "hard", "quick"];
 
-interface RouterConfig {
+export interface RouterConfig {
   enabled: boolean;
-  models: Record<Kind, string | null>;
-  /** regex sources tested against the skill name; plan is tested first */
-  rules: Record<Kind, string[]>;
-  /** exact skill name → kind (wins over rules) */
-  skills: Record<string, Kind | "none">;
-  /** @tintinweb subagent_type → kind */
-  subagents: Record<string, Kind | "none">;
+  /** preference list per tier (provider/id), tried in order before the automatic pick */
+  tiers: Record<Tier, string[]>;
+  /** never auto-pick these (provider/id or provider/*) */
+  exclude: string[];
+  /** skill-name regexes per tier (hard/quick checked on the prompt text too) */
+  rules: { plan: string[]; code: string[] };
+  /** exact skill name → tier */
+  skills: Record<string, Tier | "none">;
+  /** subagent_type → tier | "auto" (classify by task) | "none"; "*" = fallback */
+  subagents: Record<string, Tier | "auto" | "none">;
+  /** keyword regex sources for task classification (Unicode-aware word start) */
+  subagentRules: { read: string[]; write: string[]; hard: string[]; quick: string[] };
+  cooldownMinutes: number;
   restore: boolean;
 }
 
-const DEFAULTS: RouterConfig = {
+export const DEFAULTS: RouterConfig = {
   enabled: true,
-  models: { plan: "opencode-go/deepseek-v4.1-flash", code: "antigravity/gemini-3.8-flash" },
+  tiers: {
+    plan: ["opencode-go/deepseek-v4.1-flash"],
+    code: ["antigravity/gemini-3.8-flash"],
+    hard: [],
+    quick: [],
+  },
+  exclude: [],
   rules: {
     plan: ["review", "plan", "scout", "brainstorm", "(^|-)ask($|-)", "research", "audit", "explore", "analy", "spec", "design", "investigat"],
     code: ["cook", "fix", "implement", "code", "build", "refactor", "debug", "test", "migrat", "frontend", "backend"],
   },
   skills: {},
-  subagents: { Plan: "plan", Explore: "plan", "general-purpose": "code" },
+  subagents: { Plan: "plan", Explore: "plan", "general-purpose": "auto", "*": "auto" },
+  subagentRules: {
+    read: [
+      "review", "audit", "investigat", "find", "search", "explor", "analy[sz]", "explain", "plan", "research",
+      "read", "check", "summari[sz]", "list", "locate", "compare", "inspect",
+      "xem", "tìm", "kiểm tra", "đọc", "phân tích", "lập plan", "so sánh", "tóm tắt",
+    ],
+    write: [
+      "implement", "fix", "edit", "write", "refactor", "add", "create", "update", "change", "patch", "migrat", "rename", "delete",
+      "sửa", "viết", "thêm", "tạo", "cập nhật", "đổi", "xóa", "xoá",
+    ],
+    hard: [
+      "root cause", "race condition", "deadlock", "memory leak", "architect", "redesign", "large refactor", "whole (repo|codebase)",
+      "entire (repo|codebase)", "performance", "concurren", "security audit", "complex", "tricky",
+      "nguyên nhân gốc", "kiến trúc", "phức tạp", "toàn bộ (repo|dự án|codebase)", "khó",
+    ],
+    quick: ["typo", "trivial", "quick", "one-?liner", "small", "rename", "format", "nhanh", "đơn giản", "nhỏ", "lỗi chính tả"],
+  },
+  cooldownMinutes: 15,
   restore: true,
 };
 
 const CONFIG_PATH = path.join(process.env.MODEL_ROUTER_HOME || path.join(os.homedir(), ".pi", "agent"), "model-router.json");
 
-function loadConfig(): RouterConfig {
+export function loadConfig(): RouterConfig {
+  let raw: any = {};
   try {
-    const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
-    return {
-      enabled: raw.enabled ?? DEFAULTS.enabled,
-      models: { ...DEFAULTS.models, ...(raw.models ?? {}) },
-      rules: { ...DEFAULTS.rules, ...(raw.rules ?? {}) },
-      skills: { ...(raw.skills ?? {}) },
-      subagents: { ...DEFAULTS.subagents, ...(raw.subagents ?? {}) },
-      restore: raw.restore ?? DEFAULTS.restore,
-    };
+    raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   } catch {
-    return structuredClone(DEFAULTS);
+    /* defaults */
   }
+  const tiers = { ...DEFAULTS.tiers, ...(raw.tiers ?? {}) };
+  // legacy { models: { plan, code } }
+  for (const k of ["plan", "code"] as Tier[]) {
+    const m = raw.models?.[k];
+    if (typeof m === "string" && !raw.tiers?.[k]) tiers[k] = [m];
+  }
+  return {
+    enabled: raw.enabled ?? DEFAULTS.enabled,
+    tiers,
+    exclude: raw.exclude ?? DEFAULTS.exclude,
+    rules: { ...DEFAULTS.rules, ...(raw.rules ?? {}) },
+    skills: { ...(raw.skills ?? {}) },
+    subagents: { ...DEFAULTS.subagents, ...(raw.subagents ?? {}) },
+    subagentRules: { ...DEFAULTS.subagentRules, ...(raw.subagentRules ?? {}) },
+    cooldownMinutes: raw.cooldownMinutes ?? DEFAULTS.cooldownMinutes,
+    restore: raw.restore ?? DEFAULTS.restore,
+  };
 }
 
 function saveEnabled(enabled: boolean) {
@@ -70,24 +112,67 @@ function saveEnabled(enabled: boolean) {
   try {
     raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   } catch {
-    /* new file */
+    /* new */
   }
   raw.enabled = enabled;
   fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(raw, null, 2) + "\n");
 }
 
-export function classifySkill(name: string, cfg: RouterConfig): Kind | null {
-  const n = name.toLowerCase().replace(/^\//, "").replace(/^skill:/, "");
-  const exact = cfg.skills[n];
-  if (exact) return exact === "none" ? null : exact;
-  for (const kind of ["plan", "code"] as Kind[]) {
-    if (cfg.rules[kind].some((r) => new RegExp(r, "i").test(n))) return kind;
-  }
+// ---------------- classification ----------------
+
+function hits(text: string, words: string[]): string[] {
+  // \b is ASCII-only → explicit "start of word" that also works for Vietnamese
+  return words.filter((w) => new RegExp(`(^|[^\\p{L}\\p{N}])(${w})`, "iu").test(text));
+}
+
+/** hard/quick refinement from the task text; null = keep base tier */
+function refine(text: string, cfg: RouterConfig): { tier: Tier; why: string } | null {
+  const h = hits(text, cfg.subagentRules.hard);
+  if (h.length || text.length > 6000) return { tier: "hard", why: h[0] ?? "long task" };
+  const q = hits(text, cfg.subagentRules.quick);
+  if (q.length && text.length < 300) return { tier: "quick", why: q[0] };
   return null;
 }
 
-/** Skill name referenced by a prompt, if any. */
+export function classifySkill(name: string, cfg: RouterConfig, text = ""): { tier: Tier; why: string } | null {
+  const n = name.toLowerCase().replace(/^\//, "").replace(/^skill:/, "");
+  const exact = cfg.skills[n];
+  if (exact === "none") return null;
+  let base: Tier | null = exact ?? null;
+  if (!base) {
+    for (const k of ["plan", "code"] as const) if (cfg.rules[k].some((r) => new RegExp(r, "i").test(n))) { base = k; break; }
+  }
+  if (!base) return null;
+  const args = text.replace(/^\S+/, "");
+  const r = base === "code" || base === "plan" ? refine(args, cfg) : null;
+  // quick only makes sense for code work
+  if (r && !(r.tier === "quick" && base !== "code")) return { tier: r.tier, why: `${n}: ${r.why}` };
+  return { tier: base, why: n };
+}
+
+export function classifySubagent(input: any, cfg: RouterConfig): { tier: Tier | null; why: string } {
+  const type = String(input?.subagent_type ?? "");
+  const mapped = cfg.subagents[type] ?? cfg.subagents["*"] ?? "auto";
+  if (mapped === "none") return { tier: null, why: "none" };
+  if (mapped !== "auto") return { tier: mapped, why: type };
+  const text = `${input?.description ?? ""}\n${input?.prompt ?? ""}`;
+  const tools = input?.tools;
+  if (tools !== undefined) {
+    const list = (Array.isArray(tools) ? tools : String(tools).split(/[\s,]+/)).map((t: unknown) => String(t).toLowerCase()).filter(Boolean);
+    if (list.length && !list.some((t: string) => /edit|write|bash|powershell|^\*$|^all$/.test(t))) {
+      return { tier: refine(text, cfg)?.tier === "hard" ? "hard" : "plan", why: "read-only tools" };
+    }
+  }
+  const r = refine(text, cfg);
+  const w = hits(text, cfg.subagentRules.write);
+  if (r?.tier === "hard") return { tier: "hard", why: r.why };
+  if (w.length) return r?.tier === "quick" ? { tier: "quick", why: r.why } : { tier: "code", why: w[0] };
+  const rd = hits(text, cfg.subagentRules.read);
+  if (rd.length) return { tier: "plan", why: rd[0] };
+  return { tier: "code", why: "default" };
+}
+
 export function skillFromText(text: string, knownSkills: Set<string>): string | null {
   const t = text.trim();
   let m = t.match(/^\/skill:([\w.:-]+)/i);
@@ -104,25 +189,114 @@ function skillFromPath(p: string): string | null {
   return m ? m[1] : null;
 }
 
+// ---------------- model choice ----------------
+
+const key = (m: any) => (m ? `${m.provider}/${m.id}` : "(none)");
+const cost = (m: any) => (m?.cost ? (Number(m.cost.input) || 0) + 3 * (Number(m.cost.output) || 0) : NaN);
+const STRONG = /(^|[-_.])(pro|opus|max|ultra|large|plus|k3|thinking)($|[-_.\d])/i;
+const LIGHT = /(flash|lite|mini|nano|haiku|small|free|tiny|air)/i;
+const EXPERIMENTAL = /(preview|exp|contributor|vision-exp)/i;
+
+export interface Need {
+  images?: boolean;
+}
+
+export function eligible(m: any, cfg: RouterConfig, cooldown: Map<string, number>, need: Need): string | null {
+  if (!m || (m.type && m.type !== "chat")) return "not a chat model";
+  const k = key(m);
+  if (cfg.exclude.some((e) => e === k || (e.endsWith("/*") && k.startsWith(e.slice(0, -1))))) return "excluded";
+  const until = cooldown.get(k);
+  if (until && until > Date.now()) return `cooldown ${Math.ceil((until - Date.now()) / 60000)}m (429/402)`;
+  if (need.images && Array.isArray(m.input) && !m.input.includes("image")) return "no image input";
+  return null;
+}
+
+/** automatic score per tier — higher is better */
+export function autoScore(m: any, tier: Tier): number {
+  const id = String(m.id);
+  const c = cost(m);
+  const ctxw = Math.log2(Math.max(1, Number(m.contextWindow) || 1));
+  const strong = STRONG.test(id) ? 1 : 0;
+  const light = LIGHT.test(id) ? 1 : 0;
+  const exp = EXPERIMENTAL.test(id) ? 1 : 0;
+  const reasoning = m.reasoning ? 1 : 0;
+  switch (tier) {
+    case "hard":
+      return reasoning * 50 + strong * 30 - light * 25 + (Number.isFinite(c) ? Math.min(c, 100) / 2 : 0) + ctxw - exp * 10;
+    case "quick":
+      return light * 30 - strong * 20 - (Number.isFinite(c) ? Math.min(c, 100) : 5) - exp * 20 + (/free/i.test(id) ? 3 : 0);
+    default:
+      // plan / code: capable but light
+      return reasoning * 20 + light * 15 - strong * 5 - (Number.isFinite(c) ? Math.min(c, 100) / 4 : 0) + ctxw - exp * 10;
+  }
+}
+
+export interface Pick {
+  model?: any;
+  why: string;
+}
+
+export function pickModel(available: any[], tier: Tier, cfg: RouterConfig, cooldown: Map<string, number>, need: Need = {}): Pick {
+  const skipped: string[] = [];
+  for (const ref of cfg.tiers[tier] ?? []) {
+    const m = available.find((x) => key(x) === ref);
+    if (!m) {
+      skipped.push(`${ref}: unavailable`);
+      continue;
+    }
+    const bad = eligible(m, cfg, cooldown, need);
+    if (bad) {
+      skipped.push(`${ref}: ${bad}`);
+      continue;
+    }
+    return { model: m, why: `preferred${skipped.length ? ` (skipped ${skipped.join("; ")})` : ""}` };
+  }
+  const ok = available.filter((m) => !eligible(m, cfg, cooldown, need));
+  if (!ok.length) return { why: `no eligible model${skipped.length ? ` (${skipped.join("; ")})` : ""}` };
+  const best = [...ok].sort((a, b) => autoScore(b, tier) - autoScore(a, tier) || key(a).localeCompare(key(b)))[0];
+  return { model: best, why: `auto ${tier}${skipped.length ? ` (skipped ${skipped.join("; ")})` : ""}` };
+}
+
+// ---------------- extension ----------------
+
+/** process-wide: the UI (parent) router instance; no-UI instances beside it are subagent children */
+const G = globalThis as any;
+let SEQ = (G.__modelRouterSeq ??= 0);
+
 export default function (pi: ExtensionAPI) {
+  const me = (G.__modelRouterSeq = ++SEQ);
+  /** child session of a subagent: keep the model the subagent was started with */
+  const isChild = (ctx: any) => ctx?.hasUI === false && G.__modelRouterParent && G.__modelRouterParent !== me;
+  const claim = (ctx: any) => {
+    if (ctx?.hasUI === true) G.__modelRouterParent = me;
+  };
+  pi.on("session_start", async (_e: any, ctx: any) => claim(ctx));
   let cfg = loadConfig();
-  /** model active before the router's first switch in this agent run */
+  const cooldown: Map<string, number> = (G.__modelRouterCooldown ??= new Map());
   let saved: any;
-  /** model the router last set (to recognise our own model_select events) */
   let routedTo: string | null = null;
-  let routedKind: Kind | null = null;
-  let routedSkill: string | null = null;
+  let routedTier: Tier | null = null;
+  let routedWhy = "";
   let settingModel = false;
   let runSeq = 0;
   let lastNote = "";
-
-  const key = (m: any) => (m ? `${m.provider}/${m.id}` : "(none)");
 
   function notify(ctx: ExtensionContext | undefined, msg: string, level: "info" | "warning" = "info") {
     try {
       ctx?.ui?.notify?.(`[router] ${msg}`, level);
     } catch {
       /* non-TUI */
+    }
+  }
+  const short = (m: any) => (m ? String(m.id) : "?");
+
+  function available(ctx: ExtensionContext): any[] {
+    try {
+      const reg = (ctx as any).modelRegistry;
+      const list = reg?.getAvailable?.() ?? [];
+      return reg?.hasConfiguredAuth ? list.filter((m: any) => reg.hasConfiguredAuth(m)) : list;
+    } catch {
+      return [];
     }
   }
 
@@ -134,58 +308,43 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function resolveModel(ctx: ExtensionContext, ref: string): { model?: any; why?: string } {
-    const i = ref.indexOf("/");
-    if (i < 1) return { why: `bad model ref "${ref}"` };
-    const reg = (ctx as any).modelRegistry;
-    const model = reg?.find?.(ref.slice(0, i), ref.slice(i + 1));
-    if (!model) return { why: `${ref} not found in the model registry` };
-    if (reg.hasConfiguredAuth && !reg.hasConfiguredAuth(model)) return { why: `${ref}: provider not logged in` };
-    return { model };
-  }
-
-  async function route(ctx: ExtensionContext, kind: Kind, skill: string) {
+  async function route(ctx: ExtensionContext, tier: Tier, why: string, need: Need) {
     if (!cfg.enabled) return;
-    const ref = cfg.models[kind];
-    if (!ref) return;
     const current = (ctx as any).model;
-    if (key(current) === ref) {
-      routedKind = kind;
-      routedSkill = skill;
-      return;
-    }
-    const { model, why } = resolveModel(ctx, ref);
-    if (!model) {
-      const note = `${skill} → ${kind}: ${why}; staying on ${key(current)}`;
+    const pick = pickModel(available(ctx), tier, cfg, cooldown, need);
+    if (!pick.model) {
+      const note = `${why} → ${tier}: ${pick.why}; staying on ${key(current)}`;
       if (note !== lastNote) notify(ctx, note, "warning");
       lastNote = note;
       return;
     }
+    routedTier = tier;
+    routedWhy = why;
+    if (key(current) === key(pick.model)) return;
     settingModel = true;
     let ok = false;
     try {
-      ok = await pi.setModel(model);
+      ok = await pi.setModel(pick.model);
     } catch {
       ok = false;
     } finally {
       settingModel = false;
     }
     if (!ok) {
-      notify(ctx, `${skill} → ${kind}: could not switch to ${ref} (auth/quota?); staying on ${key(current)}`, "warning");
+      notify(ctx, `${why} → ${tier}: could not switch to ${key(pick.model)}; staying on ${key(current)}`, "warning");
       return;
     }
     if (saved === undefined) saved = current ?? null;
-    routedTo = ref;
-    routedKind = kind;
-    routedSkill = skill;
-    notify(ctx, `${skill} → ${kind} model ${ref}`);
+    routedTo = key(pick.model);
+    notify(ctx, `${why} → ${tier}: ${short(pick.model)} (${pick.why})`);
   }
 
   pi.on("input", async (event: any, ctx) => {
-    if (!cfg.enabled || typeof event?.text !== "string") return { action: "continue" };
+    claim(ctx);
+    if (!cfg.enabled || typeof event?.text !== "string" || isChild(ctx)) return { action: "continue" };
     const skill = skillFromText(event.text, knownSkills());
-    const kind = skill ? classifySkill(skill, cfg) : null;
-    if (skill && kind) await route(ctx, kind, skill);
+    const c = skill ? classifySkill(skill, cfg, event.text) : null;
+    if (c) await route(ctx, c.tier, c.why, { images: Array.isArray(event.images) && event.images.length > 0 });
     return { action: "continue" };
   });
 
@@ -195,16 +354,30 @@ export default function (pi: ExtensionAPI) {
     const input = event?.input;
     if (!input || typeof input !== "object") return;
     if (name === "read") {
+      if (isChild(ctx)) return;
       const skill = skillFromPath(input.path ?? input.file_path ?? "");
-      const kind = skill ? classifySkill(skill, cfg) : null;
-      if (skill && kind) await route(ctx, kind, skill);
+      const c = skill ? classifySkill(skill, cfg) : null;
+      if (c) await route(ctx, c.tier, c.why, {});
       return;
     }
     if (name === "Agent" && !input.model && typeof input.subagent_type === "string") {
-      const kind = cfg.subagents[input.subagent_type];
-      const ref = kind && kind !== "none" ? cfg.models[kind] : null;
-      if (ref && resolveModel(ctx, ref).model) input.model = ref; // mutate in place (Pi API)
+      const c = classifySubagent(input, cfg);
+      if (!c.tier) return;
+      const pick = pickModel(available(ctx), c.tier, cfg, cooldown);
+      if (!pick.model) return;
+      input.model = key(pick.model); // mutate in place (Pi API: tool_call may modify event.input)
+      notify(ctx, `subagent ${input.subagent_type} → ${short(pick.model)} (${c.tier}: ${c.why})`);
     }
+  });
+
+  // 429 / 402 on the main session's model → cooldown
+  pi.on("after_provider_response", async (event: any, ctx) => {
+    const st = Number(event?.status);
+    if (st !== 429 && st !== 402) return;
+    const m = (ctx as any).model;
+    if (!m) return;
+    cooldown.set(key(m), Date.now() + cfg.cooldownMinutes * 60_000);
+    notify(ctx, `${key(m)} returned ${st} → skipped for ${cfg.cooldownMinutes} min`, "warning");
   });
 
   pi.on("agent_start", async () => {
@@ -212,28 +385,23 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("model_select", async (event: any) => {
-    // A model picked by the user (or pi-model-fallback) while routed: don't restore over it.
     if (!settingModel && routedTo && key(event?.model) !== routedTo) {
-      saved = undefined;
+      saved = undefined; // user / pi-model-fallback picked a model → don't restore over it
       routedTo = null;
-      routedKind = null;
-      routedSkill = null;
+      routedTier = null;
     }
   });
 
   pi.on("agent_settled", async (_e, ctx) => {
     if (!cfg.restore || saved === undefined || !routedTo) return;
     const seq = runSeq;
-    // Defer: another extension (e.g. pi-goal-orch) may start the next stage right now;
-    // its input event re-routes, and a new run means "don't restore yet".
     setTimeout(async () => {
       if (runSeq !== seq || saved === undefined || !routedTo) return;
       if (key((ctx as any).model) !== routedTo) return;
       const back = saved;
       saved = undefined;
       routedTo = null;
-      routedKind = null;
-      routedSkill = null;
+      routedTier = null;
       if (!back) return;
       settingModel = true;
       try {
@@ -254,22 +422,17 @@ export default function (pi: ExtensionAPI) {
         saveEnabled(sub === "on");
         cfg = loadConfig();
       } else if (sub === "reload") cfg = loadConfig();
-      const status = (k: Kind) => {
-        const ref = cfg.models[k];
-        if (!ref) return `${k}: (off)`;
-        const r = resolveModel(ctx, ref);
-        return `${k}: ${ref}${r.model ? "" : `  ⚠ ${r.why}`}`;
-      };
-      notify(
-        ctx,
-        [
-          `Model router: ${cfg.enabled ? "ON" : "OFF"}  (config: ${CONFIG_PATH})`,
-          status("plan"),
-          status("code"),
-          `Subagents: ${Object.entries(cfg.subagents).map(([t, k]) => `${t}→${k}`).join(", ")}`,
-          `Current: ${key((ctx as any).model)}${routedKind ? ` (routed: ${routedSkill} → ${routedKind}; restores ${key(saved)} when the turn settles)` : ""}`,
-        ].join("\n"),
-      );
+      const av = available(ctx);
+      const lines = [`Model router: ${cfg.enabled ? "ON" : "OFF"}  (config: ${CONFIG_PATH})`, `Available (${av.length}): ${av.map(key).join(", ")}`];
+      for (const t of TIERS) {
+        const p = pickModel(av, t, cfg, cooldown);
+        lines.push(`${t.padEnd(5)} → ${p.model ? key(p.model) : "(none)"} — ${p.why}`);
+      }
+      const cds = [...cooldown].filter(([, u]) => u > Date.now()).map(([k, u]) => `${k} (${Math.ceil((u - Date.now()) / 60000)}m)`);
+      if (cds.length) lines.push(`Cooldown: ${cds.join(", ")}`);
+      lines.push(`Subagents: ${Object.entries(cfg.subagents).map(([t, k]) => `${t}→${k}`).join(", ")}`);
+      lines.push(`Current: ${key((ctx as any).model)}${routedTier ? ` (routed ${routedWhy} → ${routedTier}; restores ${key(saved)} when the turn settles)` : ""}`);
+      notify(ctx, lines.join("\n"));
     },
   });
 }
