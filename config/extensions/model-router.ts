@@ -54,7 +54,7 @@ export interface RouterConfig {
 export const DEFAULTS: RouterConfig = {
   enabled: true,
   tiers: {
-    plan: ["opencode-go/deepseek-v4.1-flash"],
+    plan: ["antigravity/gemini-3.8-flash"],
     code: ["antigravity/gemini-3.8-flash"],
     hard: [],
     quick: [],

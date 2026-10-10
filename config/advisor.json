@@ -8,6 +8,6 @@
   "advisorTrackedFileContent": true,
   "advisorUntrackedContent": true,
   "gateFailureMode": "warn-and-continue",
-  "advisor": "deepseek/deepseek-flash",
-  "executor": "opencode-go/deepseek-v4.1-flash"
+  "advisor": "antigravity/gemini-3.8-flash",
+  "executor": "antigravity/gemini-3.8-flash"
 }
