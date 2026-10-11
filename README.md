@@ -33,7 +33,9 @@ Extension file đơn trong `config/extensions/*.ts` và thư mục có `index.ts
 
 ## 🧩 Extension tự viết / đã chỉnh
 
-### `live-log.ts` — log trực tiếp + watchdog cho lệnh shell chạy lâu
+### `pi-live-log` (npm, [repo](https://github.com/hongducdev/pi-live-log)) — log trực tiếp + watchdog cho lệnh shell chạy lâu
+
+Đã tách thành package riêng, cài bằng `pi install npm:pi-live-log` (đã có trong `config/settings.json`). Không dùng song song với file `extensions/live-log.ts` cũ.
 - Hiện đuôi log ngay trong dòng tool đang chạy (build `pio run`, `wsl ... bash build.sh`, `Start-Job` + poll...). Tự dò file log từ redirect (`>`, `>>`, `| tee`, `Out-File`, `-RedirectStandardOutput`, script `.sh/.ps1`...) và map đường dẫn WSL (`/mnt/d/x` → `D:\x`).
 - Watchdog: không có output mới quá giới hạn *stall* hoặc chạy quá *max* → huỷ lượt (như Esc), cảnh báo trước, phân tích lỗi cục bộ và nhờ agent tóm tắt. Giới hạn tự chọn theo loại lệnh (test / install / build / default).
 - **Subagent** (`@tintinweb/pi-subagents`): session con tự nạp các extension (live-log, env-context, model-router) nhưng không có UI. Lệnh chạy lâu trong subagent hiện ở widget phía trên editor của session chính (`▸ ⤷ <tên agent>: …`). Watchdog chỉ huỷ subagent (lượt chính vẫn chạy tiếp, `Agent` trả về “aborted”), bản tóm tắt dừng gửi về session chính.
@@ -109,7 +111,6 @@ Hướng dẫn global của Pi (`~/.pi/agent/AGENTS.md`): luôn trả lời ti�
 │   ├── live-log.json                # Cấu hình mặc định live-log
 │   ├── .pi-setup-exclude            # Glob loại trừ khi backup (secret, runtime, node_modules, *.bak)
 │   └── extensions/
-│       ├── live-log.ts
 │       ├── env-context.ts
 │       ├── footer-compact.ts
 │       ├── antigravity-account-footer.ts

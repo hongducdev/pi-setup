@@ -21,7 +21,8 @@
     "npm:pi-lens",
     "npm:pi-model-fallback",
     "extensions\\pi-goal-orch",
-    "npm:pi-skillful"
+    "npm:pi-skillful",
+    "npm:pi-live-log"
   ],
   "theme": "dark",
   "extensions": [
