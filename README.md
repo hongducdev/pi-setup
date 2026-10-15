@@ -23,7 +23,7 @@ Repo chỉ chứa cấu hình, extension và font dùng chung được. **Không
 | `npm:pi-lens` | Chẩn đoán code real-time (LSP, linter, formatter, type-check). Cấu hình ở `pi-lens/`. |
 | `npm:pi-model-fallback` | Tự chuyển sang model dự phòng khi provider lỗi (429, 5xx). |
 | `extensions\pi-goal-orch` | Lệnh `/goal`: chạy chuỗi skill theo stage; mỗi goal một worktree/branch (qua Orca nếu đang chạy), tự review rồi merge. |
-| `npm:pi-skillful` | Cải thiện gọi/hiển thị skill; phím tắt toggle slot 1–6 = `ck-cook`, `ck-fix`, `ck-debug`, `ck-code-review`, `ck-git`, `ck-ask`. |
+| `npm:pi-skillful` | Cải thiện gọi/hiển thị skill; phím tắt toggle slot 1–6 = `hd-cook`, `hd-fix`, `hd-debug`, `hd-code-review`, `hd-git`, `hd-ask`. |
 
 Extension file đơn trong `config/extensions/*.ts` và thư mục có `index.ts` được Pi tự load (không cần khai báo trong `packages`).
 
@@ -56,7 +56,7 @@ Extension file đơn trong `config/extensions/*.ts` và thư mục có `index.ts
 - **Checkpoint** (`⏸`): stage cần duyệt (ví dụ duyệt plan trước khi sửa code, hoặc instruction có “Chờ tôi duyệt”) — AFK chỉ dừng sau các stage này.
 - Chỉ dừng khi tin nhắn cuối của stage thật sự hỏi người dùng; trả lời xong goal tự chạy tiếp.
 - **Git isolation**: trong git repo, mỗi goal chạy trên branch `goal/<slug>-<ngày>` trong **worktree riêng** (mặc định; tạo qua `orca worktree create` nếu Orca đang chạy để hiện trong Orca UI, không thì `git worktree add`). Không đụng file chưa commit của bạn ở main tree. `/goal --branch …` (cần tree sạch) hoặc `/goal --no-git …`.
-- **Kết thúc tự động**: stage `ck-code-review` → FAIL thì `ck-fix` + review lại (tối đa 2 vòng) → PASS thì `merge --no-ff` vào base (không push), xoá worktree + `branch -d`. Test stage FAIL thì không merge. Chạy **nhiều goal song song**: registry + merge lock, base đi tiếp thì merge base vào goal rồi review/test lại, cảnh báo sớm khi 2 goal sửa cùng file, conflict thì abort và dừng.
+- **Kết thúc tự động**: stage `hd-code-review` → FAIL thì `hd-fix` + review lại (tối đa 2 vòng) → PASS thì `merge --no-ff` vào base (không push), xoá worktree + `branch -d`. Test stage FAIL thì không merge. Chạy **nhiều goal song song**: registry + merge lock, base đi tiếp thì merge base vào goal rồi review/test lại, cảnh báo sớm khi 2 goal sửa cùng file, conflict thì abort và dừng.
 - **`/goal new <mô tả>`** (kiểu Orca Multi-task): tạo worktree riêng rồi mở **Pi mới** trong đó (tab terminal Orca, hoặc cửa sổ console) — Pi mới tự nhận và chạy goal, session hiện tại vẫn rảnh. `/goal list`: mọi goal ở mọi worktree. Không cho 2 goal chạy cùng một thư mục (no-git/branch), lưu kết quả từng stage vào `<worktree>/.pi-goal/<run>/stage-N.md` (git bỏ qua) và đưa vào prompt stage sau, cảnh báo khi lệnh `cd` ra ngoài worktree của goal.
 - Lệnh: `/goal new` · `/goal list` · `/goal status` · `/goal next` · `/goal auto` (sang AFK, đang dừng thì chạy tiếp) · `/goal hitl` · `/goal merge` · `/goal abandon` (giữ branch/worktree) · `/goal goals` · `/goal skip` · `/goal retry` · `/goal cancel` · `/goal skills` · `/goal help`. Cấu hình `~/.pi/agent/goal-orch.json` (`git`, `merge: auto|ask`, `keepBranch`, `orca`, `orcaSetup: inherit|run|skip`, `orcaAutoAddRepo`, …). Chi tiết: [`config/extensions/pi-goal-orch/README.md`](config/extensions/pi-goal-orch/README.md).
 

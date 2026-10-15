@@ -32,7 +32,7 @@ export function renderSystemPrompt(input: {
 		'- If the assistant proposed a next step and it fits, a short reply such as "Yes.", "Go ahead.", or "Proceed." is usually best.',
 		"- Add text only when it carries new information: a constraint, a correction, or emphasis.",
 		"- Do not restate, summarise, or paraphrase the assistant's proposal.",
-		'- When a capability list is present in the message, prefer suggesting a capability that fits by writing its slash command (for example "/ck:plan"), optionally with a short argument. Items under Relevant* include descriptions and are the best candidates; OtherInstalled* lists are names only. Never suggest a capability that does not fit, and never invent one that is not listed.',
+		'- When a capability list is present in the message, prefer suggesting a capability that fits by writing its slash command (for example "/hd-plan"), optionally with a short argument. Items under Relevant* include descriptions and are the best candidates; OtherInstalled* lists are names only. Never suggest a capability that does not fit, and never invent one that is not listed.',
 		'- If TurnStatus is "aborted", the user interrupted on purpose: suggest either a deliberate resume or a clear redirection.',
 		"- If the assistant's direction conflicts with recent user behaviour, write a natural pivot instead.",
 		`- Keep the result under ${input.maxSuggestionChars} characters. Prefer fewer.`,

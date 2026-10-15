@@ -56,7 +56,7 @@ This is an accepted risk for Phase 0, not a verified-safe design.
 ### Capability-aware suggestions
 
 The prompt carries the installed skills, commands, prompt templates, and tools, so a suggestion can
-be a capability invocation (for example `/ck:plan`) when that genuinely fits.
+be a capability invocation (for example `/hd-plan`) when that genuinely fits.
 
 A large skill library is the cost problem: every description on every turn runs to thousands of
 tokens. So ranking is split in two:

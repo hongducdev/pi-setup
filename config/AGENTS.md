@@ -16,7 +16,7 @@
 - If I ask "tại sao..." / "có tác dụng gì", answer the question first; do not start changing code.
 
 ## Workflow
-- I drive work through skills (`ck-fix`, `ck-cook`, `ck-code-review`, `ck-ask`, `ck-plan`, `ck-git`, `ui-ux`...). Follow the invoked skill's workflow and gates.
+- I drive work through skills (`hd-fix`, `hd-cook`, `hd-code-review`, `hd-ask`, `hd-plan`, `hd-git`, `ui-ux`...). Follow the invoked skill's workflow and gates.
 - For non-trivial features: write a plan (under the repo's `plans/` folder), wait for my "approve"/"duyệt"/"ok", then implement. "approve --auto" / "--auto" means run the remaining phases without stopping.
 - "continue" / "tiếp tục" / "làm tiếp" / "hoàn thành nốt" = resume exactly where you stopped; do not restart or re-plan.
 - "làm lần lượt" = do the listed items one by one, in order, finishing each before the next. "làm hết một lượt" = do all of them now.

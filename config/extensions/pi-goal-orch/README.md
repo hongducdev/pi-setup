@@ -70,9 +70,9 @@ Khi `cwd` nằm trong git repo, goal được cô lập ngay lúc `/goal …`:
 | `--no-git` | Không quản lý git (như bản cũ). |
 
 - **Pi không cho extension đổi cwd của session**, nên mọi prompt stage được chèn khối *Git isolation*: chỉ làm việc trong `<worktree>`, mọi lệnh shell bắt đầu bằng `cd "<worktree>" && …`, sửa file bằng đường dẫn tuyệt đối dưới worktree, commit sau mỗi stage có sửa code (conventional message, theo AGENTS.md), **không** push/switch/merge/rebase. env-context nhận diện project theo `cd` đầu lệnh nên hoạt động bình thường với đường dẫn worktree.
-- **Kết thúc (tự động)**: nếu plan chưa kết thúc bằng stage review thì tự thêm stage `ck-code-review` (đổi bằng `reviewSkill`). Stage review xem `git diff <base>...HEAD` và báo kết quả bằng tool `goal_report` (`kind: review`, `verdict: PASS|FAIL`) — hoặc dòng `VERDICT: PASS|FAIL`.
-  - **FAIL** → tự chèn stage `ck-fix` + review lại, tối đa `maxFixLoops` (mặc định 2) vòng, sau đó dừng chờ bạn (`/goal merge` để review lại).
-  - **PASS** → nếu plan có stage test (`ck-test`…) mà lần test cuối **FAIL** thì không merge. `merge: ask` → dừng chờ `/goal merge`. Còn lại: merge.
+- **Kết thúc (tự động)**: nếu plan chưa kết thúc bằng stage review thì tự thêm stage `hd-code-review` (đổi bằng `reviewSkill`). Stage review xem `git diff <base>...HEAD` và báo kết quả bằng tool `goal_report` (`kind: review`, `verdict: PASS|FAIL`) — hoặc dòng `VERDICT: PASS|FAIL`.
+  - **FAIL** → tự chèn stage `hd-fix` + review lại, tối đa `maxFixLoops` (mặc định 2) vòng, sau đó dừng chờ bạn (`/goal merge` để review lại).
+  - **PASS** → nếu plan có stage test (`hd-test`…) mà lần test cuối **FAIL** thì không merge. `merge: ask` → dừng chờ `/goal merge`. Còn lại: merge.
 - **Merge** (không bao giờ push / force / xoá việc chưa merge):
   1. Lấy **merge lock** của repo (`~/.pi/agent/goal-orch-locks/`) — goal khác đang merge thì đợi và tự thử lại.
   2. Base đã đi tiếp (goal khác vừa merge) → merge base mới vào goal branch trong worktree; **conflict → `merge --abort`, dừng chờ bạn**; sạch → chạy lại test (nếu plan có) + review rồi mới merge.
@@ -116,8 +116,8 @@ Pi không đổi được cwd của session, nên chạy nhiều goal trong cùn
   "orca": "auto",             // auto = dùng Orca khi CLI trả lời; off
   "orcaSetup": "inherit",     // inherit | run | skip — setup hook của repo trong Orca (vd npm install)
   "orcaAutoAddRepo": true,    // repo chưa có trong Orca thì orca repo add
-  "reviewSkill": "ck-code-review",
-  "fixSkill": "ck-fix",
+  "reviewSkill": "hd-code-review",
+  "fixSkill": "hd-fix",
   "maxFixLoops": 2,
   "lockStaleMinutes": 30,
   "newLauncher": "auto",      // /goal new: auto (Orca terminal → cửa sổ console) | orca | window | none

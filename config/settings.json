@@ -30,12 +30,12 @@
   ],
   "skillful": {
     "toggleSlots": {
-      "1": "ck-cook",
-      "2": "ck-fix",
-      "3": "ck-debug",
-      "4": "ck-code-review",
-      "5": "ck-git",
-      "6": "ck-ask"
+      "1": "hd-cook",
+      "2": "hd-fix",
+      "3": "hd-debug",
+      "4": "hd-code-review",
+      "5": "hd-git",
+      "6": "hd-ask"
     }
   }
 }
